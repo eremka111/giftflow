@@ -118,10 +118,9 @@ class Transaction_search extends Search
 			"include_messages"=>FALSE,
 			"include_events"=>FALSE,
 			"include_unread"=>TRUE,
-			"limit"=>NULL
+			"limit"=>2000
 		);
 		$options = (object) array_merge($default_options,$options);
-		
 		// Redirect find by good queries
 		if(!empty($options->good_id))
 		{
@@ -180,6 +179,7 @@ class Transaction_search extends Search
 		$transactions = $this->CI->db->limit($options->limit)
 			->get()
 			->result();
+
 		if(empty($transactions))
 		{
 			// @todo handle empty results / throw error
@@ -194,7 +194,7 @@ class Transaction_search extends Search
 		// factory
 		$users = $User_search->find(array(
 			"transaction_id"=>$transaction_id_list,
-			"limit"=>NULL
+			"limit" => 2000
 		));
 		$Factory->set_users($users);
 		
@@ -211,10 +211,11 @@ class Transaction_search extends Search
 		$good_id_list = $Factory->get_ids("goods");
 		$goods = $Good_search->find(array(
 			"good_id"=>$good_id_list,
-			"limit"=>NULL
+			'radius' => 10000,
+                        'status' => array('active','disabled', 'unavailable')
 		));
 		$Factory->set_goods($goods);
-		
+
 		// Load Reviews and pass them to the factory
 		if($options->include_reviews)
 		{
@@ -278,4 +279,24 @@ class Transaction_search extends Search
 		
 		return $result;
 	}
+
+	/*
+	 * Function to validate if a user is involved in a given transaction
+	 * takes transaction_id and user_id
+	 * used on the you/controller for security purposes
+	 *
+	 * @author hans schoenburg
+	 */
+	public function check_user($options)
+	{
+		$result = $this->CI->db->select('TU.user_id, TU.transaction_id')
+								->from('transactions_users AS TU')
+								->where('TU.user_id',$options['user_id'])
+								->where('TU.transaction_id', $options['transaction_id'])
+								->get()
+								->result();
+
+		return(count($result) > 0);
+	}
+
 }

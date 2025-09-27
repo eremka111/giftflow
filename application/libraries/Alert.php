@@ -110,7 +110,7 @@ class Alert {
 		$footer = $this->CI->load->view('email/footer',FALSE,TRUE);
 		$config['message_html'] = $header.$this->message.$footer;
 		
-		$config["to"] = $this->to;
+		$config["to"] = 'hans@giftflow.org';
 		$config["reply_to_email"] = '';
 		$config["reply_to_name"] = '';
 		$config["cc"] = '';
@@ -120,50 +120,50 @@ class Alert {
 		$this->email( $config );
 	}
 
-     
 	/** 
 	*	Generate message and subject by parsing the alert template
 	*	and the data found in $this->parseables
 	*/
 	function generate()
 	{
-		// Load template from database using template name
-		$Term = new Term();
-		$T = $Term->get_email_template($this->template_name, "en");
+
+		//this is used for sending emails where entire body is prepared beforehand like remind
+		$this->subject = $this->parseables['subject'];
+
+		$this->CI->config->load("email_templates");
+		$templates = $this->CI->config->item('email_templates');
 		
 		// If term not found, show error
-		if(!$T)
+		if (!array_key_exists($this->template_name, $templates) ||
+				!array_key_exists("en", $templates[$this->template_name]))
 		{
 			show_error("Alert::generate(): Email Template `".$this->template_name."` not found.");
 		}
-
-		// Set the subject if not manually defined
-		if(empty($this->subject))
-		{
-			$this->subject = $T->subject;
-		}
 		
-		// Parse template
-		if(!empty($this->parseables) && is_array($this->parseables))
-		{
-			// Loop through the parseables array
-			foreach ($this->parseables as $key => $val)
+		$T = $templates[$this->template_name]["en"];
+		
+		if(empty($this->message)) { 
+			// Parse template
+			if(!empty($this->parseables) && is_array($this->parseables))
 			{
-				// Generate list of tags to look for using delimiters
-				$find_arr[]    = $this->left_delimiter . $key . $this->right_delimiter;
-				
-				// Generate list of values to replace tags with
-				$replace_arr[] = htmlspecialchars($val,ENT_COMPAT,"UTF-8");
+				// Loop through the parseables array
+				foreach ($this->parseables as $key => $val)
+				{
+					// Generate list of tags to look for using delimiters
+					$find_arr[]    = $this->left_delimiter . $key . $this->right_delimiter;
+					
+					// Generate list of values to replace tags with
+					$replace_arr[] = htmlspecialchars($val,ENT_COMPAT,"UTF-8");
+				}
+				// Replace tags with values, set message and subject fields
+				$this->message = str_replace($find_arr, $replace_arr, $T);
 			}
-			// Replace tags with values, set message and subject fields
-			$this->message = str_replace($find_arr, $replace_arr, $T->body);
-			$this->subject = str_replace($find_arr, $replace_arr, $this->subject);
-		}
-		
-		// If nothing to parse, set message to be body field from database
-		else
-		{
-			$this->message = $T->body;
+			
+			// If nothing to parse, set message to be body field from database
+			else
+			{
+				$this->message = $T;
+			}
 		}
 	}
 	
@@ -204,7 +204,6 @@ class Alert {
 		$Mail->message_html($config['message_html']);
 		
 		$info = $Mail->send();
-		
 		$this->CI->load->library('datamapper');
 		$E = new Event();
 		

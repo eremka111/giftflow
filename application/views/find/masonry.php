@@ -1,0 +1,262 @@
+<div class='row find_header'>
+	<div class='span12'>
+	<?php if($type == 'need') { ?>
+		<h1 class='need'>Needs</h1>
+		<p class='nicebigtext'>Earn some gratitude. Browse these needs to find where you can help.</p>
+	<?php } else { ?>
+		<h1>Gifts</h1>
+		<p class='nicebigtext'>Enjoy the generosity of your community. Request what you want.</p>
+	<?php } ?>
+	</div>
+</div>
+<div class='nav_wrapper'>
+	<div class='row-fluid chunk' id='masonry_nav' data-spy='affix' data-offset-top='140'>
+			<!-- Goods dropdown -->
+			<div class='span6 search_elements'>
+				<form name='find_goods' class='find_form'id="find_goods" action="" method='post'>
+					<div class='input-append'>
+						<input type='text' size='16' placeholder="<?php if($type == 'gift') { echo 'What do you need?'; } else { echo 'What can you give?'; } ?>" class='masonry_input' id="q" name='q' value='<?php echo $args["q"];?>' />
+						<button class='btn btn-large' type='submit' id="find"><i class='icon-search'></i> Find</button>
+					</div>
+				</form>
+			</div>
+			<div class='span2 search_elements'>
+				<select name="sort" id="order_by" class='input-small'>
+					<option value="newest"<?php if($args['order_by'] == 'newest') { echo "selected"; }?>>Newest</option>
+					<option value="nearby" <?php if($args['order_by'] =='location_distance') { echo "selected"; } ?>>Nearby</option>
+				</select>
+			</div>
+			<div class='btn-group span3'>
+				<button id='scroll_button' style='display:none;' class='btn btn-large'><i class='icon-arrow-up'></i>Back to Top</button>
+			</div>
+	</div>
+</div><!-- close row -->
+
+<div class='row'>
+		<div class='span2 chunk' id='category_sidebar'>
+			<ul id='categories'>
+			<?php foreach($parent_categories as $pcat) { ?>
+				<?php if($pcat->name != 'Other') { ?>
+				<li class='parent_category'>
+						<span class='parent_name'><?php echo $pcat->name; ?></span>
+						<ul class='sub_categories'>
+							<?php foreach($sub_categories as $cat) {?>
+								<?php if($cat->parent_category_id == $pcat->id) { ?>
+									<li class='subcategory' id='cat_<?php echo $cat->id; ?>'><?php echo $cat->name; ?></li>
+								<?php } ?>
+							<?php } ?>
+						</ul>
+				</li>
+				<?php } ?>
+				<?php } ?>
+				<li class='subcategory' id='cat_16'>Other</li>
+			</ul>
+	</div>
+
+	<div class='span9'>
+		<div class=' brick_wall'>
+	<?php if($display == 'results') { ?>
+		<?php foreach($results as $obj) { ?>
+			<?php echo $obj->html; ?>
+		<?php } ?>
+	<?php } ?>
+		</div>
+		<!-- Loading Message -->
+		<div class="results_empty" style="<?php if($display == 'results') { echo 'display:none'; } ?>">
+			<h3>No Results Found</h3>
+			<p>Oops! No results were found that matched your query.</p>
+			<?php if($args['type'] != 'people') { ?>
+				<p><a href="<?php echo site_url('you/watches'); ?>" class='btn btn-info btn-large'>Add Watch</a>
+					Add a watch keyword to be notified when someone posts a match!
+				</p>
+				<p><a class='btn btn-success btn-large'>Add Gift</a> Is this something you can give? Make it a gift!</p>
+			<?php }?>
+		</div>
+	</div>
+	
+</div>
+<div id='ajax_loader' style='display:none;'>
+	<center>	
+		<?php if($type =='need') { ?>
+			<h3 class='need'>Loading...</h3>
+			<img src="<?php echo site_url('assets/images/285needloader.gif');?>"/>
+		<?php } else { ?>
+			<h3>Loading...</h3>
+			<img src="<?php echo site_url('assets/images/285loader.gif');?>"/>
+		<?php } ?>
+	</center>
+</div>
+
+
+
+<script type='text/javascript'>
+
+$(function() {
+
+	$('.brick_wall').masonry({
+		itemSelector: '.brick',
+			columnWidth: 160,
+			isFitWidth:true
+	}).imagesLoaded(function() {
+		$('.brick_wall').masonry('reload');
+	});
+
+
+	$('.nav_wrapper').height($('#masonry_nav').height());
+	$('#masonry_nav').css('left', $('.brick_wall').offset().left);
+
+
+//	$('.category_wrapper').width($('#category_sidebar').width());
+
+
+
+	// GF Namespace wrapper
+	GF.UI = {};
+	GF.Data = {};
+	GF.Ajax = {};
+
+	//Infinite scroll flag
+
+	GF.UI.scroll_load = false;
+	GF.UI.more_available = <?php echo $more_available; ?>
+	
+	GF.Params = (function(){
+	
+		var api = {};
+		
+		var data = {
+			type: "<?php echo $args['type']; ?>",
+			q: '',
+			profile_type:"<?php echo $args['profile_type'];?>",
+			order_by: "<?php echo $args['order_by'];?>",
+			category_id: "<?php echo $args['category_id'];?>",
+			limit: 50,
+			offset: 0,
+			radius: 100,
+		};
+		
+		api.get = function(){
+			return data;
+		};
+		
+		api.set = function(key,value){
+			data[key] = value;
+		};
+
+		api.changetype = function () {
+			data.order_by = '';
+			data.category_id = '';
+			data.profile_type = '';
+			data.q = '';
+		};
+		
+		return api;
+		
+	}());
+
+	GF.UI.noResults = function(){
+		$('.results_empty').show();
+	};
+	GF.UI.clearResults = function() {
+		$('.brick_wall').empty();
+	};
+	
+	// Add results to UI
+	GF.UI.setResults = function(data){
+		$.each(data, function(key, val){
+			$(".brick_wall").append($(val.html));
+		});
+		$('.brick_wall').masonry('reload');
+		//reset back to false each time
+		GF.UI.scroll_load = false;
+	};
+
+	// Process AJAX Data
+	GF.Ajax.process = function(data){
+
+		//check if more results might be available
+		var params = GF.Params.get();
+		if(data.results.length == params.limit) {
+			GF.UI.more_available = true;
+		} else {
+			GF.UI.more_available = false;
+		}
+
+		if(!GF.UI.scroll_load) {
+			GF.UI.clearResults();
+		}
+		if(data.results.length > 0){
+			GF.UI.setResults(data.results);
+		} else {
+			console.log('nomore!');
+			GF.UI.noResults();
+		}
+	}
+
+	// Send AJAX request
+	GF.Ajax.request = function(data){
+		$.post("<?php echo $this->config->item('base_url') .'find/ajaxRequest'; ?>", GF.Params.get(), GF.Ajax.process, "json");
+		if(!GF.UI.scroll_load) {
+			$("html, body").animate({ scrollTop: 0 }, 1000);
+		}
+	};
+
+	//Set Event Listeners
+	$('#find_goods').submit(function() {
+		GF.Params.set('q', $('#q').val());
+		GF.Ajax.request(); 
+	});
+	$('.parent_cat').click(function() {
+		GF.Params.set('category_id',$(this).attr('id').substr(4));
+		GF.Ajax.request();
+	});
+	$('.subcategory, .parent_category').click(function() {
+		var cat = $(this).attr('id').substr(4);
+		GF.Params.set('category_id',cat);
+		GF.Ajax.request();
+	});
+	$('#order_by').change(function(e) {
+		GF.Params.set('order_by',$('#order_by option:selected').val());
+		console.log('ehllo!');
+		GF.Ajax.request();
+	});
+
+	//add listener to scroll button
+	$('#scroll_button').click(function() {
+		$('body, html').animate({
+			scrollTop:0
+		}, 800);
+		$('#scroll_button').hide();
+	});
+
+	
+
+	//Infinite ScrollerZ
+	$(window).scroll(function()
+	{
+		if($(window).scrollTop() < 200) {
+			$('#scroll_button').hide();
+		} else {
+			$('#scroll_button').show();
+		}
+
+	   if(GF.UI.more_available && !GF.UI.scroll_load && $(window).scrollTop() == $(document).height() - $(window).height())
+	   {
+		console.log('ahhhh');
+	      $('#ajax_loader').show();
+			GF.UI.scroll_load = true;
+			
+			var params = GF.Params.get();
+			var new_offset = params.offset + params.limit;
+
+			console.log(new_offset);
+			
+			GF.Params.set('offset', new_offset);	
+			
+			GF.Ajax.request();
+	   }
+	});
+});
+
+
+</script>

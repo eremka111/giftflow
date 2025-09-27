@@ -11,7 +11,8 @@
 		<?php if(!empty($results)){ ?>
 			<?php echo UI_Results::users(array(
 				"results"=>$results,
-				"mini"=>FALSE
+				"mini"=>FALSE,
+				"include" => array('created')
 			));?>
 		<?php } ?>
 		<?php if(!empty($message)) { ?>
@@ -34,6 +35,5 @@ $(function(){
 		$(this).remove();
 		return false;
 	});
-	$("#community_sources").buttonTabs();
 });
 </script>

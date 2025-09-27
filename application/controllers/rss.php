@@ -1,5 +1,7 @@
 <?php
 
+/* DEPRECATED -- this library uses finder, which was destroyed long ago */
+
 class Rss extends CI_Controller {
 	
 	/**
@@ -169,14 +171,14 @@ class Rss extends CI_Controller {
 		if(!empty($location))
 		{
 			$L= new Location();
-				$this->load->library('geo');
-				$Geo = new geo();
-				$full_location = $Geo->geocode($location);
-				
-				foreach($full_location as $key=>$val)
-					{
-						$L->$key = $val;
-					}
+			$this->load->library('geo');
+			$Geo = new geo();
+			$full_location = $Geo->geocode($location);
+
+			foreach($full_location as $key=>$val)
+			{
+				$L->$key = $val;
+			}
 		}
 		else
 		{

@@ -16,6 +16,7 @@ class Util
 	public function __construct()
 	{
 		$this->CI =& get_instance();
+		$this->CI->output->no_cache();
 		
 	}
 	/**
@@ -38,11 +39,11 @@ class Util
 	*	to define the $this->data variable in all controllers
 	*
 	*	@param array $options
-	*	@param boolean $options['geocode_ip']
 	*	@return array
 	*/
 	public function parse_globals( $options = array() )
 	{
+	
 		Console::logSpeed('start Util::parse_globals()');
 
 		$globals = array();
@@ -65,8 +66,7 @@ class Util
 			$domain = $host[sizeof($host)-2] . "." . $host[sizeof($host) - 1];
 		}
 		$globals['localhost'] = $localhost;
-		
-		
+
 		// Set userdata
 		if($this->CI->session->userdata('user_id'))
 		{
@@ -84,8 +84,8 @@ class Util
 				'screen_name'=>$this->CI->session->userdata('screen_name'),
 				'first_name'=>$this->CI->session->userdata('first_name'),
 				'last_name'=>$this->CI->session->userdata('last_name'),
-				'photo_thumb_url'=>$this->CI->session->userdata('photo_thumb_url'),
-				'photo_url'=>$this->CI->session->userdata('photo_url'),
+				'default_photo_thumb_url'=>$this->CI->session->userdata('photo_thumb_url'),
+				'default_photo_url'=>$this->CI->session->userdata('photo_url'),
 				'language'=>$this->CI->session->userdata('language'),
 				'timezone'=>$this->CI->session->userdata('timezone')
 			);
@@ -96,11 +96,30 @@ class Util
 				$globals['userdata']['first_name'] = $globals['userdata']['screen_name'];
 			}
 			
+
+			//Set display name
+			
+			$display_name = '';
+			if(strlen($globals['userdata']['screen_name']) > 12) {
+				$names_array = mb_split(" ",$globals['userdata']['screen_name']);
+				if(strlen($names_array[0]) < 12) {
+					$display_name = trim($names_array[0]);
+				} else {
+					$display_name = 'You';
+				}
+			} else {
+				$display_name = $globals['userdata']['screen_name'];
+			}
+			$globals['userdata']['display_name'] = $display_name;
+
+			
 			// Set Location Data
 			
 			// Iterate over list of location fields, setting Location field if data
-			$globals['userdata']['location'] = (object) array();
+			$globals['userdata']['location'] = new stdClass(); //(object) array();
+
 			$location_fields = array("longitude","latitude","address","city","state");
+
 			foreach($location_fields as $field)
 			{
 				if(!empty($this->CI->session->userdata['location_'.$field]))
@@ -108,25 +127,95 @@ class Util
 					$globals['userdata']['location']->$field = $this->CI->session->userdata('location_'.$field);
 				}
 			}
+
+			//check for outstanding notifications
+			$globals['inboxCount'] = $this->activeInbox($this->CI->session->userdata('user_id'));
+			$globals['activeInbox'] = ($globals['inboxCount'] > 0)? TRUE : FALSE;
+
 		}
 		else
 		{
+			$this->CI->config->load('account',TRUE);
+			$fbook = $this->CI->config->config['account'];
+
+			//load the facebook sdk
+			if(defined('FBOOK_APP_ID') && defined('FBOOK_SECRET'))
+			{
+				require_once('assets/facebook-php-sdk/src/facebook.php');
+				$config = array (	
+					"appId"=> FBOOK_APP_ID,
+					"secret"=> FBOOK_SECRET,
+					"fileUpload"=>true
+				);
+	
+				$this->facebook = new Facebook($config);
+				$params = array(
+					'scope' => 'email, user_photos, publish_stream',
+					'redirect_uri' => site_url('member/facebook/').'?redirect='.$this->CI->uri->uri_string()
+				);
+	
+				$globals['fbookUrl'] = $this->facebook->getLoginUrl($params);
+			}
+			
+			//redirect URL for logins
+			//This is overriden by action use cases, like where a user tries to request a good
+
+			$globals['dropdown_login_redirect'] = current_url();
+
 			$globals['logged_in'] = FALSE;
 			$globals['userdata'] = array();
 		}
+
+		//Important note about locations. Locations are almost always stored as objects...
+		//EXCEPT for the session->userdata which is an flat array with each value as 'location_whatever'
+		//Geocode via IP address if session has no location
+		
+		$sess_locate = $this->CI->session->userdata('location_longitude');
+		if(empty($sess_locate))
+		{
+			$this->CI->load->library('geo');
+			$this->CI->load->library('auth');
+			$globals['userdata']['location'] = $this->CI->geo->geocode_ip();
+			$this->CI->auth->update_session_location($globals['userdata']['location']);
+
+		}
+		//session location is set, but globals is not
+		if(empty($globals['userdata']['location']))
+		{
+			$globals['userdata']['location'] = new stdClass();
 			
-		// Geocode via IP address if $options['geocode_ip']==TRUE
-			if(empty($globals['userdata']['location']->longitude))
+			$properties = array(
+				"latitude","longitude","address","city","state","country"
+			);
+			//translate flat session array into globals location object
+			foreach($properties as $property)
 			{
-				$this->CI->load->library('geo');
-				$globals['userdata']['location'] = $this->CI->geo->geocode_ip();
+				$globals['userdata']['location']->$property = $this->CI->session->userdata("location_".$property);
 			}
+		}
+
+		/* Get and trim location for header */
+		$header_location = (isset($globals['userdata']['location']->city)) ? $globals['userdata']['location']->city : 'Add your location';
+		$locate_array = explode(" ",$header_location);
+
+		$i=0;
+		$rebuild = '';
+		while($i < count($locate_array)) {
+			if(strlen($rebuild.$locate_array[$i]) < 20) {
+				$rebuild .= " ".$locate_array[$i];
+				$i++;
+			} else {
+				$i = 100;
+			}
+		}
+		$globals['header_location'] = rtrim($rebuild, ",");
 
 		$globals['alert_success'] = "";
 		$globals['alert_error'] = "";
 		
 		// Is this an AJAX request?
 		$globals['is_ajax'] = $this->CI->input->is_ajax_request();
+
 		
 		// Load URI segments as array so they can be used in conditionals
 		// ( loading their values from the URI library often throws an error
@@ -138,16 +227,51 @@ class Util
 		
 		// Set Default Facebook Open Graph Tags
 		$globals['open_graph_tags'] = array(
-			'fb:app_id' => '111637438874755',
 			'og:url' => current_url(),
 			'og:site_name' => 'GiftFlow'
 		);
+		
+		if(defined('FBOOK_APP_ID'))
+		{
+			$globals['open_graph_tags']['fb:app_id']= FBOOK_APP_ID;
+		}
 		
 		Console::logSpeed('end Util::parse_globals()');
 		
 		return $globals;
 	}
-	
+
+
+	/**
+	 * Checks if user has outstanding notifications
+	 *
+	 * @param user_id
+	 * returns int 
+	 * @author Hans Schoenburg
+	 */
+
+	public function activeInbox($user_id)
+	{
+
+		$results = $this->CI->db->select('N.event_id, N.user_id, N.enabled')
+					->from('notifications AS N')
+					->where('N.user_id',$this->CI->session->userdata('user_id'))
+					->where('N.enabled', 1)
+					->get()
+					->result();
+
+
+		return count($results);
+	}
+
+	public function clearActiveInbox($user_id)
+	{
+		$this->CI->db->where('user_id', $user_id)
+			->update('notifications', array('enabled' => 0));
+	}
+
+
+
 	/**
 	*	Calculates time ago string
 	*	For example, "This post was created 4 minutes ago" instead of displaying
@@ -334,4 +458,5 @@ class Util
 		$this->CI->output->set_header("Content-Type:application/json");
 		$this->CI->output->set_output($json);
 	}
+
 }

@@ -17,44 +17,48 @@ class Find extends CI_Controller {
 	var $args = array(
 		"q"=>"",
 		"type"=>"gift",
-		"location"=>"",
+		"location"=>NULL,
 		"category_id"=>NULL,
-		"radius"=>100,
-		"limit"=>20,
-		"offset"=>0
+		"radius"=>10000,
+		"limit"=>50,
+		"offset"=>0,
+		'order_by' => NULL,
+		'profile_type' => NULL
 	);
 	
 	function __construct()
 	{
 		parent::__construct();
 		$this->util->config();
-		$this->data = $this->util->parse_globals(array(
-			"geocode_ip"=>TRUE
-		));
+		$this->data = $this->util->parse_globals();
 		$this->load->library('Search/Good_search');
 		$this->load->library('Search/User_search');
-		$this->load->library('finder');
 	}
-
-	public function index( $type = NULL, $q = NULL)
+	
+	function gifts()
 	{
-		Console::logSpeed("Find::index()");
+		$this->_items("gift");
+	}
+	
+	function people()
+	{
+		$this->_items("people");
+	}
+	
+	function needs()
+	{
+		$this->_items("need");
+	}
+	
+	function _items($type)
+	{
+		Console::logSpeed("Find::items()");
+		
+		$this->args["type"] = $type;
 		
 		$this->_set_args();
 		
-		// Run search query if extra parameters, $_GET or $_POST data found
-		if(!empty($_GET) || !empty($_POST) || !empty($type))
-		{
-			Console::logSpeed("Find::starting_query");
-		
-			$this->_search();
-			
-			if($this->input->is_ajax_request())
-			{
-				return $this->util->json($this->data['results_json']);
-			}
-		}
-		
+		$this->_search();
 		
 		// Page Title
 		$this->data['title'] = "Find";
@@ -67,62 +71,70 @@ class Find extends CI_Controller {
 		
 		// Search args
 		$this->data['args'] = $this->args;
-		
+
 		//Store searh radius
 		$this->data['radius'] = $this->args["radius"];
 
-		// Page can display one of three types of content.
-		// 1. Tags
-		// 2. Tags + No results message
-		// 3. Results & Google Map
-		// Cases 1 & 2: Tags / Tags + No Results Message
-		if(empty($this->data['results']))
-		{
-			// Load and instantiate Tag_search library
-			$this->load->library('Search/Tag_search');
-			$T = new Tag_search;
-						
-			// Get popular tags
-			$this->data['tags'] = $T->popular_tags(array(
-				"location"=>$this->data['userdata']['location'],
-				"type"=>"gift"
-			));
-			
-			// Set display type
-			if(empty($this->data['keyword']))
-			{
-				$this->data['display'] = 'tags';
-			}
-			elseif(!empty($this->data['keyword']))
-			{
-				$this->data['display'] = 'no_results';
-			}
-		}
-		elseif(!empty($this->data['results']))
-		{
-			$this->data['display'] = 'results';
-		}
+		$this->data['display'] = (empty($this->data['results']))? 'no_results' : 'results';
 
-		// Load category data
-		$this->data['categories']= $this->db->order_by("name","ASC")
+		$more_available = (count($this->data['results']) == $this->args['limit']);
+		$this->data['more_available'] = json_encode($more_available);
+		
+		$this->data['form'] = $this->load->view('you/includes/add_good_form', $this->data, TRUE);
+
+
+		$this->data['parent_categories']= $this->db->order_by("name","DESC")
 			->where('parent_category_id',NULL)
 			->get('categories')
 			->result();
 		
+		$this->data['sub_categories']= $this->db->order_by("name","ASC")
+			->where('parent_category_id IS NOT NULL', null, FALSE)
+			->get('categories')
+			->result();
+
 		// Load Menu
 		$this->data['menu'] = $this->load->view('find/includes/menu', $this->data, TRUE);
 
+		$this->data['category_menu'] = $this->load->view('find/includes/categories.php', $this->data, TRUE);
+
+		$this->data['people_menu'] = $this->load->view('people/includes/submenu.php', $this->data, TRUE);
+
+		$this->data['js'][] = 'masonry.js';
+
 		// Load views
 		$this->load->view('header',$this->data);
-		$this->load->view('find/includes/header',$this->data);
-		$this->load->view('find/index', $this->data);
+		//$this->load->view('find/includes/header',$this->data);
+		$this->load->view('find/masonry', $this->data);
 		$this->load->view('footer', $this->data);
 		
-		Console::logSpeed("Find::index(): done.");
+		Console::logSpeed("Find::items(): done.");
+	}
+	
+	public function ajaxRequest()
+	{
+		$this->args["type"] = $_REQUEST['type'];
+		
+		$this->_set_args();
+		
+		Console::logSpeed("Find::starting_query");
+		
+		$this->_search();
+		
+		return $this->util->json($this->data['results_json']);
+	}
+
+	public function index()
+	{
+		$this->gifts();
 	}
 	
 	/**
 	*	Performs search
+        *       uses $this->args for parameters
+        *      sets $this->data['results'] and $this->data['results_json']
+        *      does not return anything
+        *      
 	*/
 	function _search ()
 	{
@@ -134,21 +146,19 @@ class Find extends CI_Controller {
 		{
 			Console::logSpeed("Find::_search(): starting User_search...");
 			$options= array(
-				"screen_name"=>$this->args["q"], 
-				"first_name"=>$this->args["q"], 
-				"last_name"=>$this->args["q"], 
-				"bio"=>$this->args["q"],
-				"occupation"=>$this->args["q"],
+				"keyword"=>$this->args["q"],
 				"location"=>$this->args['location'],
 				"radius"=>$this->args['radius'],
-				"limit"=>50,
-				"order_by"=>"location_distance",
-				"sort" => 'ASC'
+				"limit" => $this->args['limit'],
+				"order_by"=>$this->args['order_by'],
+				"sort" => $this->args['sort'],
+				'status' => 'active',
+				'type' => $this->args['profile_type']
 			);
-				
+			
 			$US = new User_search;
-			$this->data['results'] = $US->find($options);
-				
+			$results = $US->find($options);
+			$this->data['results'] = $this->factory->users_ajax($results, $this->args['order_by']);
 		}
 		else
 		{
@@ -162,9 +172,12 @@ class Find extends CI_Controller {
 				"type"=>$this->args["type"],
 				"category_id"=>$this->args["category_id"],
 				"order_by"=>$this->args["order_by"],
-				"limit"=>100,
 				"status"=>"active",
-				'sort' =>$this->args['sort']
+				'sort' =>$this->args['sort'],
+				'radius' => $this->args['radius'],
+				'limit' =>$this->args['limit'],
+				"limit" => $this->args['limit'],
+				'offset' => $this->args['offset']
 			);
 			
 			$results = $GS->find($options);
@@ -177,38 +190,19 @@ class Find extends CI_Controller {
 			"total_results"=>count($this->data['results']),
 			"results"=>$this->data['results']
 		);
+
 		$this->data['results_json'] = json_encode($data);
 	}
 	
+        /**
+         *  Sets search parameters
+         *  First scans through URL segments - set in util::parse_globals
+         *  Then scans the $_REQUEST array 
+         *  Matches up inputs with search options  
+         */
 	function _set_args()
 	{
 		Console::logSpeed("Find::_set_args()");
-			
-		// Scan 2nd URL segment for useful args
-		if(!empty($this->data['segment'][2]))
-		{
-			$types = array("gift","need","people");
-
-			// Scan for `type` keywords
-			if($this->data['segment'][2]=="gifts")
-			{
-				$this->args["type"] = "gift";
-			}
-			elseif($this->data['segment'][2]=="needs")
-			{
-				$this->args["type"] = "need";
-			}
-			elseif(in_array(strtolower($this->data['segment'][2]),$types))
-			{
-				$this->args["type"] = strtolower($this->data['segment'][2]);
-			}
-			
-			// If not a type and not index, use as `q`
-			elseif($this->data["segment"][2]!="index")
-			{
-				$this->args["q"] = urldecode($this->data["segment"][2]);
-			}
-		}
 		
 		// Scan 3rd URL segment for `q`
 		if(!empty($this->data['segment'][3]))
@@ -225,37 +219,52 @@ class Find extends CI_Controller {
 			}
 		}
 		
-		// Set order by clause
+                
+		// Set order by clause, Figure out Location parameters
 		// UI passes a value of either "newest" or "nearby"
 		// Search lib requires values of either "G.created" or 
 		// "location_distance"
-		
-		$this->args["order_by"] = "G.created";
-		$this->args['sort'] = 'DESC';
+
+		$this->args['order_by'] = ($this->args['type'] != 'people') ? 'location_distance' : 'U.created';
+		$this->args['sort'] = 'ASC';
 		
 		// Encode "nearby" as "location_distance" if found
-		if(!empty($_REQUEST["order_by"]) && $_REQUEST["order_by"]=="nearby")
+		if(!empty($_REQUEST["order_by"]))
 		{
-			$this->args["order_by"] = "location_distance";
-			$this->args['sort'] = 'ASC';
-		}
-		
-		
-		// If no location, try to use the userdata's location object
-		if(empty($this->args["location"]) && !empty($this->data['userdata']['location']))
-		{
-			$this->args["location"] = $this->data['userdata']['location'];
+			if($_REQUEST["order_by"]=="nearby") {
+				$this->args["order_by"] = "location_distance";
+				$this->args['sort'] = 'ASC';
+
+			} else if($_REQUEST['order_by'] == 'newest' && $this->args['type'] != 'people') {
+				$this->args['order_by'] = 'G.created';
+				$this->args['sort'] = 'DESC';
+			}
 		}
 		// If location consists only of a string, geocode it
-		elseif(!empty($this->args["location"]) && !is_object($this->args["location"]))
+		if(!empty($this->args["location"]) && !is_object($this->args["location"]))
 		{
 			$this->load->library('geo');
-			$this->args["location"] = $this->geo->geocode($this->args['location']);
+			$this->args['location'] = $this->geo->process($this->args['location']);
+
 		}
-		elseif(empty($this->args["location"]))
+		//if location isn't provided, then don't use it!
+		elseif(empty($this->args["location"]) && !empty($this->data['userdata']['location']))
 		{
-			$this->load->library('geo');
-			$this->args["location"] = $this->geo->geocode_ip();
+			$this->args['location'] = $this->data['userdata']['location'];
+		}
+		elseif(empty($this->args['location']))
+		{
+			$this->args['sort'] = 'DESC';
+
+			$this->args['order_by'] = ($this->args['type'] != 'people') ? 'G.created' : 'U.created';
+
+		}
+		
+		if(!empty($_REQUEST['radius']))
+		{
+			$this->args['location']->radius = $_REQUEST['radius'];
+			$this->args['radius'] = $_REQUEST['radius'];
+			$this->radius = $_REQUEST['radius'];
 		}
 		
 	}

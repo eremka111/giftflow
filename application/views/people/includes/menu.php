@@ -1,30 +1,10 @@
-<div id='dash_header'>
-		<img src="<?php echo base_url().'assets/images/headings/people_menu.jpg';?>" class="heading people_header" alt="" />
-</div>
-
 <ul id='find_sidebar' class='sidebar_menu filters'>
-	
-				<li <?php if((empty($segment[2])) || $segment[2]=='index' || $segment[2]=="community"){ echo  "class='active'"; } ?>>
-					<a href='<?php echo site_url('people');?>' > 
-					Community
-					
-					</a>
-				</li>
+
 				<li <?php if($segment[2]=='find'){ echo  "class='active'"; } ?>>
-					<a href='<?php echo site_url('people/find');?>'> 
+					<a href='<?php echo site_url('find/people');?>'> 
 					Find
 					</a>
 				</li>
-				
-      <li style='clear:both;'>
-			<span id="order_by_label">
-				Sort By
-			</span>
-			<select name="order_by" id="order_by">
-				<option value="newest" selected='selected'>Newest</option>
-				<option value="nearby">Nearby</option>
-			</select>
-  </li>
 				<?php if($logged_in){?>
 				
 					<li <?php if($segment[2]=='friends'){ echo  "class='active'"; } ?>>

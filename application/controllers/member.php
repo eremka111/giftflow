@@ -6,6 +6,8 @@ class Member extends CI_Controller {
 	var $U;
 	var $code;
 	var $facebook;
+	var $login_url;
+	var $error_string = ' ';
 	
 	function __construct()
 	{
@@ -14,51 +16,97 @@ class Member extends CI_Controller {
 		$this->load->library('datamapper');
 		$this->load->library('Search/User_search');
 		$this->data = $this->util->parse_globals();
-		$this->hooks =& load_class('Hooks');
 		$this->config->load('account', TRUE);
 		$fbook = $this->config->config['account'];
 
 		//load the facebook sdk
-		require_once('assets/facebook/facebook.php');
-		$config = array (	
-			"appId"=> $fbook['appId'],
-			"secret"=> $fbook['secret'],
-			"fileUpload"=>true
-		);
-		$this->facebook = new Facebook($config);
+		if(defined('FBOOK_APP_ID') && defined('FBOOK_SECRET'))
+		{
+			require_once('assets/facebook-php-sdk/src/facebook.php');
+			$config = array (	
+				"appId"=> FBOOK_APP_ID,
+				"secret"=> FBOOK_SECRET,
+				"fileUpload"=>true
+			);
+			$this->facebook = new Facebook($config);
 
+			$params = array(
+				'scope' => 'email, user_photos, publish_stream',
+				'redirect_uri' => site_url('member/facebook')
+			);
+	
+			$this->login_url = $this->facebook->getLoginUrl($params);
+		}
 	}
 
 	function index()
 	{
 		// redirect to profile
-		redirect('you/profile');
+		redirect('you/index');
 	}
-	
+
+	/*
+	 * Facebook callback function
+	 * Login and registration facebook calls route back here
+	 */
+	function facebook()
+	{
+		$get = $this->input->get('redirect');
+		$redirect = (!empty($get)) ? $get : 'you/index';
+
+		//check if user is facebook authorized
+		$user = $this->facebook->getUser();
+
+		//facebook authorized
+		if($user > 0) {
+			try {
+				$user_info = $this->facebook->api('/me');
+			} catch (FacebookApiException $e) {
+				show_error($e);
+				$user_info = null;
+				redirect('');
+			}
+				$user_info['token'] = $this->facebook->getAccessToken();
+				$user_info['redirect'] = $redirect;
+				return $this->auth->facebook($user_info);
+
+		}else {
+			$this->session->set_flashdata('error', "Error connecting with Facebook");
+			redirect('member/login');
+		}
+	}
+
 	/**
 	*	Login page
 	*	@param string $redirect
+	*	redirect comes from two places. the hidden input of the header dropdown login form
+	*	and the goods::visitor_redirect function which stores the redirect in the sesssion
 	*/
 	function login( $redirect = FALSE )
 	{
+		//set redirect before proceeding
+		$sess_redirect = $this->session->userdata('visitor_redirect_url');
 
-		$user = $this->facebook->getUser();
-		//facebook authorized
-		if($user > 0)
-		{
-			$user_info = $this->facebook->api('/me','GET');
-			$user_info['token'] = $this->facebook->getAccessToken();
-		
-			$userJson = json_encode($user_info);
-			$userObj = json_decode($userJson);
+		if(!empty($_POST['redirect'])) {
 
-			$this->auth->facebook($userObj);
+			$redirect = $this->input->post('redirect');
+
+			//if loggin in from index, redirect to you/index
+			if($redirect == site_url() || $redirect == site_url('member/login') || $redirect == site_url('register')) {
+				$redirect ='you/index';
+			}
+
+		} else if(!empty($sess_redirect)){
+			$redirect = $sess_redirect;
+		} else {
+			$redirect = 'you/index';
 		}
 
+		
 		// If form data POST is here, process login
-		else if(!empty($_POST))
+		if(!empty($_POST))
 		{
-			$this->U = $this->auth->login();
+			$this->U = $this->auth->login($this->input->post());
 			
 			// Check for errors
 			
@@ -66,31 +114,18 @@ class Member extends CI_Controller {
 			if(count($this->U->error->all) > 0)
 			{
 				$this->session->set_flashdata('error', $this->U->error->string);
-				redirect('login');
+				$this->error_string = $this->U->error->string;
+				$this->_login_form($redirect);
 			}
 			// No errors. Proceed.
 			else
 			{
-				// If there is a redirect adress set, send the authorized user there
-				//-hans - unclear what this bit does
-				if($this->input->post('redirect'))
-				{
-					$q = $this->db->where('id', $this->input->post('redirect'))->get('redirects',1);
-					$r = $q->row();
-					redirect($r->url);
-				}
-				else
-				{
-					redirect('you/welcome');
-				}
+				redirect($redirect);
 			}
-		}
-		
-		// If no form data, render login form
-		else
-		{
-			$this->data['redirect'] = $redirect;
-			$this->_login_form();
+		} else {
+
+			// If no form data, render login form
+			$this->_login_form($redirect);
 		}
 	}
 	
@@ -106,20 +141,9 @@ class Member extends CI_Controller {
 	/**
 	*	Registration form display and processing
 	*/
-	function register()
+	function register ()
 	{
 		$this->load->library('recaptcha');
-
-		if(!empty($_GET['code']))
-		{
-			$user_info = $this->facebook->api('/me','GET');
-			$user_info['token'] = $this->facebook->getAccessToken();
-		
-			$userJson = json_encode($user_info);
-			$userObj = json_decode($userJson);
-
-			$this->auth->facebook($userObj);
-		}
 
 		// If form data is present, save new user
 		if(!empty($_POST))
@@ -128,11 +152,12 @@ class Member extends CI_Controller {
 			if (!$this->recaptcha->check_answer($this->input->ip_address(),$this->input->post('recaptcha_challenge_field'),$this->input->post('recaptcha_response_field')))
 			{
 				$this->session->set_flashdata('error', "You did not correctly input the words in the image. Please try again.");
-				redirect('register');
+				$this->_register_form($this->input->post());
 			}
+
 			
 			// Perform registration routine
-			$this->U = $this->auth->register();
+			$this->U = $this->auth->register($this->input->post());
 			
 			// Check for errors
 			
@@ -143,9 +168,22 @@ class Member extends CI_Controller {
 				redirect('register');
 			}
 			
-			// If no errors, send to success form
+			// If no errors, check for waiting thanks and then send to success form
 			else
 			{
+
+				//check thankyous table to thankInvites
+				$T = new Thankyou();
+				$thanks = $T->where('recipient_email', $this->U->email)->get();
+				if($thanks->exists())
+				{
+					foreach($thanks as $val)
+					{
+						$val->recipient_id = $this->U->id;
+						$val->save();
+					}
+				}
+
 				$this->_register_success();
 			}
 		}
@@ -159,7 +197,7 @@ class Member extends CI_Controller {
 
 	/**
 	*	Processes activation link to confirm user's account, then redirects to
-	*	welcome page
+	*	you/index page
 	*
 	*	@param string $code
 	*/
@@ -179,10 +217,10 @@ class Member extends CI_Controller {
 				// Update user data
 				$U->activate();
 				
-				// Log user in, redirect to welcome page
+				// Log user in, redirect to you/index page
 				$this->auth->manual_login($U, FALSE);
 				$this->session->set_flashdata('success','Welcome to GiftFlow!');
-				redirect('welcome');
+				redirect('you/index');
 			}
 			else
 			{
@@ -194,35 +232,47 @@ class Member extends CI_Controller {
 	
 	
 	/**
-	*	Email reset_password link to user
+	* Forgotten password procedure works as follows
+	* User clicks a "Forgot your password?" link taking them here. If POST is empty, a form is loaded.
+	* The submitted form returns back here. Using the submitted email we get the
+	* associated forgotten_password_code, or generate one if the email lacks one.
+	* Then the notify library sends them an reset_link including the code, which routes them to
+	* the reset_password function below.
+	*
+	*	Handle forgot_password form data and Email reset_password link to user
+	*
+	*	@author Hans
 	*
 	*/
 	function forgot_password()
 	{
 		if(!empty($_POST))
 		{
-			$email = $_POST['email'];
+			$input = $this->input->post();
+			$email = $input['email'];
+
+			//get User row, include forgotten password code generated upon initial registration
 			$this->load->library('Search/User_search');
-			$U = new User_search();
+			$U_search = new User_search();
 			$options = array(
 				'email' => $email, 
 				'include_forgotten_password_code' => TRUE
 			);
 			
-			$this->U = $U->get($options);
+			$U = $U_search->get($options);
 			
-			if($this->U->email == $email)
+			if(isset($U->id))
 			{
-				$hook_data = array(
-					"email" => $this->U->email,
-					"screen_name" => $this->U->screen_name,
-					"user_id" => $this->U->id
+				$event_data = array(
+					"email" => $U->email,
+					"screen_name" => $U->screen_name,
+					"user_id" => $U->id
 				);
 				//If user is old and doesn't have code already in database
-				if(empty($this->U->forgotten_password_code))
+				if(empty($U->forgotten_password_code))
 				{
 					$new_code = sha1('$newpassword%$'.microtime(TRUE));
-					$hook_data['forgotten_password_code'] = $new_code;
+					$event_data['forgotten_password_code'] = $new_code;
 					$U_d = new User();
 					$U_d->where('email', $email)->get();
 					
@@ -236,16 +286,21 @@ class Member extends CI_Controller {
 				}
 				else
 				{
-					$hook_data['forgotten_password_code'] = $this->U->forgotten_password_code;
+					$event_data['forgotten_password_code'] = $U->forgotten_password_code;
 				}
 				
+				$event_data = (object)$event_data;
+				$this->load->library('event_logger');
+				$this->event_logger->basic('reset_password',$event_data);
 				
-				$this->hooks->call('reset_password', $hook_data);
+				$this->load->library('notify');
+				$this->notify->reset_password( $event_data);
+				
 				$this->_reset_password_success();
 			}
 			else  // TODO: Give a better error message for accounts that do not exist
 			{
-				$this->session->set_flashdata('error','Sorry an error occured');
+				$this->session->set_flashdata('error','Sorry but we could not find an account with the email address you provided.');
 				redirect('');
 			}
 			
@@ -265,53 +320,63 @@ class Member extends CI_Controller {
 	/**
 	* Process reset_password link, then redirect to reset password page
 	*
+	* @author hans
+	*
+	* @param $code string passed via GET
+	*
 	*/
-	function reset_password( $code )
+	function reset_password()
 	{
+		$code = $this->input->get('code');
 		if(empty($code))
 		{
 			$this->session->set_flashdata('error','Your forgotten code did not work');
 			redirect('');
-		}
-		else
-		{
-			$this->U = new User();
-			$this->U->where('forgotten_password_code', $code)->get();
+
+		} else {
+
+			$U = new User();
+			$U->where('forgotten_password_code', $code)->get();
 			
-			if(count($this->U->all)==1)
+			if(!$U->exists())
 			{
-				$this->auth->manual_login($this->U, FALSE);
-				return $this->enter_new_password();
-				$this->session->set_flashdata('success','Now you can reset your password');
-			}
-			else
-			{
-				$this->session->set_flashdata('error','Your forgotten password code did not work');
+				$this->session->set_flashdata('error','Your forgotten password code did not work. Please contact email info@giftflow.org for assistance.');
 				redirect('');
-			}
+			} else {
+				$this->load->library('auth');
+				$this->auth->manual_login($U, FALSE);
+				$this->session->set_flashdata('success','Now you can reset your password');
 				
+				$this->new_password_form();
+
+			}
 		}
-	
-	
 	}
 	
+	/**
+	 * processes form data from new_password form
+	 * or loads new password_form
+	 * @param int user_id
+	 *
+	 */
 	function enter_new_password()
 	{
 		if(!empty($_POST))
 		{
+			$post = $this->input->post();
+
 			$this->load->library('Search/User_search');
-			$U = new User_search();
-			$this->U = $U->get($options = array('user_id' => $this->data['userdata']['user_id']));
+			$U_search = new User_search();
+			$U = $U_search->get($options = array('user_id' => $this->session->userdata('user_id')));
 			
-			if($this->U->email == $_POST['email'])
+			if($U->email == $post['email'])
 			{
 				$this->load->library('auth');
 				$A = new Auth();
-				if($A->reset_password($this->U))
+				if($A->reset_password($U, $post))
 				{
 					$this->session->set_flashdata('success','New password saved!');
-					$this->hooks->call('new_password', $this->U);
-					redirect('you');
+					redirect('you/index');
 				}
 			}
 			else
@@ -323,12 +388,20 @@ class Member extends CI_Controller {
 		}
 		else
 		{
+			//user submitted blank form
 			$this->new_password_form();
 		}
 	}
-	
+		
+	/**
+	 * Loads new_password form
+	 * for user, already validated to enter their new password
+	 * passes user_id as a hidden form field
+	 * @param int user_id
+	 */
+
 	protected function new_password_form()
-	{
+	{	
 		//Load view to enter new password
 		$this->data['js'][] = 'jquery-validate.php';
 		$this->data['title'] = "Reset Password";
@@ -337,38 +410,51 @@ class Member extends CI_Controller {
 		$this->load->view('footer', $this->data);
 	}
 	
-	
-	protected function _login_form()
+	protected function _login_form($redirect)
 	{
-		$params = array(
-			'scope' => 'email, user_photos, publish_stream',
-			'redirect_uri' => 'http://mvp.giftflow.org/member/login'
-		);
+	
+		if(isset($this->facebook))
+		{
+	
+			$this->data['redirect'] = $redirect;
+	
+			$this->data['fbookUrl'] = $this->login_url;
+		}
 
-		$loginUrl = $this->facebook->getLoginUrl($params);
-
-		$this->data['fbookUrl'] = $loginUrl;
 		$this->data['js'][] = 'jquery-validate.php';
 		$this->data['title'] = "Login";
+		$this->data['error_string'] = $this->error_string;
 		$this->load->view('header', $this->data);
 		$this->load->view('member/login', $this->data);
 		$this->load->view('footer', $this->data);
 	}
 
-	protected function _register_form()
+
+	/*
+	* Loads register form
+	* @param oldPost is an array containing previously submitted form data
+	 */
+
+	protected function _register_form($oldPost = NULL)
 	{
-		$params = array(
-			'scope' => 'email, user_photos, publish_stream',
-			'redirect_uri' => 'http://mvp.giftflow.org/member/register'
-		);
-
-		$this->data['registerUrl'] = $this->facebook->getLoginUrl($params);
-
+		if(isset($this->facebook))
+		{
+			$this->data['registerUrl'] = $this->login_url;
+		}
 
 		if(empty($this->U))
 		{
 			$this->U = new User();
 		}
+
+		$fields = array('email','screen_name', 'city');
+		
+		$this->data['recaptchaError'] = (empty($oldPost))? FALSE : TRUE;
+
+		foreach($fields as $val) {
+			$this->data['form'][$val] = (empty($oldPost[$val]))? '' : $oldPost[$val];
+		}	
+
 		$this->data['js'][] = 'jquery-validate.php';
 		$this->data['facebook_sdk'] = $this->load->view('includes/facebook_sdk',NULL,TRUE);
 		$this->data['recaptcha'] = $this->recaptcha->get_html();
@@ -385,10 +471,8 @@ class Member extends CI_Controller {
 	*/
 	protected function _register_success()
 	{
-		$this->data['title'] = "Registration Successful";
-		$this->load->view('header',$this->data);
-		$this->load->view('member/registration_success', $this->data);
-		$this->load->view('footer', $this->data);
+		$this->session->set_flashdata('success', "Congratulations! We sent you an email with a link to log you in");
+		redirect('');
 	}
 	
 	/**
@@ -398,50 +482,10 @@ class Member extends CI_Controller {
 	
 	protected function _reset_password_success()
 	{
-		$this->data['title'] = "Email Confirmation on its way";
-		$this->load->view('header',$this->data);
-		$this->load->view('member/reset_success', $this->data);
-		$this->load->view('footer', $this->data);
+		$this->session->set_flashdata('success', "A confirmation email is on its way");
+		redirect('');
 	}
 
-	function fakebook()
-	{
-		die('here');
-	}
-
-
-	function facebook($data)
-	{
-		//$user = $this->facebook->getUser();
-		
-		//$accessToken = $this->facebook->getAccessToken();
-		
-
-		if($user) {
-		//	$user_info = $this->facebook->api('me?fields=id,name,first_name,last_name&access_token='.$accessToken);
-		//	var_dump($user_info);
-		}
-		echo('herere');
-
-
-
-	}
-		// the necessary data to the Auth class.
-//		else
-//		{
-//			$access = $key1.'='.$val1;
-//			if(!empty($key2)&&!empty($val2))
-//			{
-//				$access .= $key2.'='.$val2;
-//			}
-//			$facebook_data = json_decode(file_get_contents("https://graph.facebook.com/me?".$access));
-//			
-//			if($key1=="access_token")
-//			{
-//				$facebook_data->token = $val1;
-//			}
-//			
-//			$this->auth->facebook($facebook_data);
 
 	function terms()
 	{

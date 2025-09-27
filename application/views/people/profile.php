@@ -1,407 +1,238 @@
-<?php 
+<!-- profile is divided into two columns! -->
+<div class = 'row-fluid' class='profile_header'>
 
-if(!$active) { echo "DISABLED"; }
+	<div class='span1' id='profile_masthead'>
 
-
-?>
-<div id='good_header'>
-	<a href="<?php echo current_url();?>" class="user_image left medium">
-		<img src="<?php echo $profile_thumb; ?>" />
-	</a>
-	<div id='good_header_info'>
-	    	<?php if($u->type=="nonprofit") { echo "<a href='#' id='nonprofit_link' class=' link'>Non-Profit </a>"; } ?>
-
-		<h1 id='profile_name'><?php echo $u->screen_name; ?></h1>
-		<p>
-			<?php if(!empty($u->default_location)&&!empty($u->default_location->city)){ ?>
-						<?php echo $u->default_location->city.',';?>
-							<?php if($u->default_location->country=="United States")
-							{
-									echo $u->default_location->state.' / ';
-							} 
-							else 
-							{
-									echo $u->default_location->country.' / ';
-							} ?> 
-			<?php } ?>
-			<?php echo $u->total_followers; ?> Followers</p>
+			<a href="<?php echo current_url();?>" class="user_image left medium">
+				<img src="<?php echo $profile_thumb; ?>" />
+			</a>	
 	</div>
-</div>
-<div id='profile_left'>
-<ul id='profile_toolbar_left' class='gray_toolbar'>
-	
-	<!-- 
-<li>
-		<a href='#' class='overview' rel='overview'>Overview</a>
-	</li>
- -->
-	
-	<li>
-		<a href='#' class="active_goods active" rel='active_goods'>Gifts & Needs</a>
-	</li>
-	<li>
-		<a href='#' class="reviews" rel='reviews'>Reviews</a>
-	</li>
-	<li>
-		<a href='#' class='profile' rel='bio'>Bio</a>
-	</li>
-	<!-- 
-<li>
-		<a href='#' class="history" rel='history'>History</a>
-	</li> 
- -->
- 	<li>
-		<a href='#' class='profile' rel='photos'>Photos</a>
-	</li>
-	<li>
-		<a href='#' rel='give_to'><?php if($visitor){?>Give to <?php echo substr($u->screen_name, 0, 20); }?></a>
-	</li>
-	
-	
-	
-	
-</ul>
-<div id='profile_left_content'>
-
-	
-<div id='overview' style = 'display:none;' class='profile_pane'>
-		
-		<h3 class="grid_title">Reviews (<?php echo count($giver)+count($receiver);?>)</h3>
-		<?php if(!empty($receiver)){ ?>
-		<?php } ?>
-		<h3 class="grid_title">Gifts (<?php echo !empty($gifts) ? count($gifts) : 0;?>)</h3>
-		<?php if(!empty($gifts)) { ?>
-		
-			<?php echo UI_Results::goods(array(
-				"results"=>array_slice($gifts,0,7),
-				"grid"=>TRUE
-			)); ?>
-			
-			<?php if(count($gifts)>7){ ?>
-				<a href="#" rel="active_goods" class="view_all">View All</a>
-			<?php } ?>
-			
-		<?php } else { ?>
-			<p>This user does not have any gifts to give at the moment.</p>
-		<?php } ?>
-		
-		
-		<br />
-		<h3 class="grid_title">Needs (<?php echo !empty($needs) ? count($needs) : 0;?>)</h3>
-
-		<?php if(!empty($needs)) { ?>
-		
-			<?php echo UI_Results::goods(array(
-				"results"=>array_slice($needs,0,7),
-				"grid"=>TRUE
-			)); ?>
-			
-			<?php if(count($needs)>7){ ?>
-				<a href="#" rel="active_goods" class="view_all">View All</a>
-			<?php } ?>
-			
-		<?php } else { ?>
-			<p>This user does not have any needs at the moment.</p>
-		<?php } ?>
-		
+	<div class='span3'>
+			<p class='nicebigtext' id='profile_name'><?php echo $u->screen_name; ?></p>
 	</div>
-
-
-<!-- Active Gifts and Needs -->
-	<div id='active_goods'  class='profile_pane active'>
-	
-		<h3>Gifts</h3>
-		
-		<?php if(!empty($gifts)) { ?>
-		
-			<?php echo UI_Results::goods(array(
-				"results"=>$gifts,
-				"mini"=>TRUE
-			)); ?>
-			
-		<?php } else { ?>
-			<p>This user does not have any gifts to give at the moment.</p>
-		<?php } ?>
-		
-		<br />
-		<h3>Needs</h3>
-
-		<?php if(!empty($needs)) { ?>
-		
-			<?php echo UI_Results::goods(array(
-				"results"=>$needs,
-				"mini"=>TRUE
-			)); ?>
-			
-		<?php } else { ?>
-			<p>This user does not have any needs at the moment.</p>
-		<?php } ?>
-		
-	</div>
-<!-- Gift History section -->
-	<div id='history' style='display: none;' class='profile_pane'>
-		<h3>Gifts Given</h3>
-		
-		<?php if(!empty($gifts_given)) { ?>
-		
-			<?php echo UI_Results::goods(array(
-				"results"=>$gifts_given
-			)); ?>
-			
-		<?php } else { ?>
-			<p>This user has not yet given any gifts.</p>
-		<?php } ?>
-
-		<h3>Gifts Received</h3>
-		
-		<?php if(!empty($gifts_received)) { ?>
-		
-			<?php echo UI_Results::goods(array(
-				"results"=>$gifts_received
-			)); ?>
-			
-		<?php } else { ?>
-			<p>This user has not yet received any gifts.</p>
-		<?php } ?>
-		
-	</div>
-<!-- Reviews Section -->
-	<div id='reviews' style='display: none;' class='profile_pane'>
-		<h3>Gifts Given</h3>
-			<?php if(!empty($giver)) 
-			{   
-				echo UI_Results::reviews(array(
-					"results"=>$giver
-				));
-			 } 
-			 else
-			 {?>
-				<p>This user has not yet given any gifts</p>
-			<?php } ?>
-	<br />
-	<br />
-		<h3>Gifts Received</h3>
-			<?php if(!empty($receiver)) 
-			{   	
-				echo UI_Results::reviews(array(
-					"results"=>$receiver
-				));
-			 } 
-			 else
-			 {?>
-				<p>This user has not yet received any gifts</p>
-			<?php } ?>
-	</div>
-	
-	<!-- Photos -->
-	<div id='photos' class='profile_pane' style="display:none;">
-		
-		<?php if(!empty($photos)) { ?>
-			<div id="slideshow">
-		 
-			<ul class="slides">
-				<?php foreach($photos as $val) { ?>
-				 <li id="<?php echo $val['id']; ?>">
-				 	<span class = "<?php echo $val['id']; ?>" style="display:none;"><?php echo $val['caption']; ?></span>
-				 <img src="<?php echo $val['url']; ?>" width="510" height="320" alt="<?php echo $val['caption']; ?>" />
-				 </li>
-				
+	<div class='span8'>
+			<div class='btn-group profile_actions'>
+				<?php if($visitor) { ?>
+					<?php if(isset($is_following) &&($is_following)) { ?>
+						<a href='<?php echo site_url("people/unfollow/".$u->id);?>' id='unfollow_button' class='btn btn-medium'><i class='icon-eye-close'></i>Unfollow</a>
+					<?php } else { ?>
+					<a href='<?php echo site_url("people/follow/".$u->id); ?>' id='follow_button' class='btn btn-medium <?php if(empty($logged_in_user_id)) { echo "disabled"; }?>'><i class='icon-eye-open'></i> Follow</a>
+					<?php } ?>
+					<a href='#' id='message_button' class='btn profile_action btn-medium <?php if(empty($logged_in_user_id)) { echo "disabled";}?>'><i class='icon-pencil'></i> Message</a>
+					<a href='#' id='thank_button' class='btn profile_action btn-medium btn-success <?php if(empty($logged_in_user_id)){echo "disabled";}?>'><i class='icon-gift icon-white'></i> Thank</a>
+				<?php } else { ?>
+					<?php if(!isset($userdata['bio'])) { ?>
+						<a class='btn' href="<?php echo site_url('account'); ?>"><i class='icon-user'></i>Update profile</a>
+					<?php } ?>
+						<a class='btn' href="<?php echo site_url('account/photos'); ?>"><i class='icon-camera'></i>Upload photos</a>
+						<a class='btn' href="<?php echo site_url('you/list_goods/need'); ?>"><i class='icon-minus-sign'></i>Your Needs</a>
+						<a class='btn' href="<?php echo site_url('you/list_goods/gift'); ?>"><i class='icon-gift'></i>Your Gifts</a>
+						<a class='btn' href="<?php echo site_url('you/watches'); ?>"><i class='icon-time'></i>Your Watches</a>
 				<?php } ?>
-			</ul>
-		 
-			<span class="arrow previous"></span>
-			<span class="arrow next"></span>
 			</div>
-		<?php } else {?>
-		<!-- empty state for photos -->
-			<p> <?php echo $u->screen_name; ?> has not uploaded additional photos yet </p>
-		<?php } ?>
-	</div>
-	
-	<div id='give_to' style='display: none;' class='profile_pane'>
-		<h3>Offer a Gift to <?php echo $u->screen_name; ?> </h3>
-		<p>Add a message</p>
-		<form method="post" action="<?php echo site_url('people/profile');?>">
-		<input type="hidden" name="type" value="give">
-		<input type="hidden" name="decider_id" value="<?php echo $this->uri->segment(2); ?>" />
-		<textarea name="reason"></textarea>
-		<br />
-		<p><input style="float:left;" type="submit" value="Send" class="btn btn-large" /></p>
-		<br />
-		
-			<?php if(!empty($potential_gifts)) {
 				
-				echo UI_Results::goods(array(
-				"results"=>$potential_gifts,
-				"include" => array("offer_links")
-				)); 
-				?> 
-				</form>
-		<?php }
-			else
-			{
-				echo "You need to post some gifts first! Log in and go to My Gifts and Click 'Add Gift'";
-			}?>
-	
+	</div><!-- close profile_masthead -->
+
+</div> <!-- close profile_header row -->
+
+
+<div class='row-fluid'>
+	<div class='span6'>
+			<div class='profile_form' id='profile_thank_form'style='display:none;' >
+				<?php echo $thankform; ?>
+			</div>
+			<div class='profile_form' id='profile_message_form' style='display:none;'>
+				<?php echo $messageform;?>
+			</div>
 	</div>
-	<!-- Bio -->
-	<div id='bio' class='profile_pane profile_item' style="display:none;">
-			
-				<h3>Bio</h3>
-				<p><?php if(!empty($u->bio)) { echo $u->bio; }?></p>
-				<h3>URL</h3>
-				<p><?php if(!empty($u->url)) { echo $u->url; }?>
-				<h3>Occupation</h3>
-				<p><?php if(!empty($u->occupation)) { echo $u->occupation; }?>
-		 
-	</div>
-</div>
-</div>
-<div id='profile_right'>
-<?php if($logged_in) { ?>
-<div class='profile_item'>
-	<?php if($u->id!=$logged_in_user_id) { ?>
-		<?php if(isset($is_following)&&$is_following) { ?>
-			<a class='btn btn-large disabled btn-primary' id='already_following'>
-				Following
-			</a>
-			<br />
-			<a href='<?php echo site_url('people/unfollow/'.$u->id); ?>'>
-				Unfollow
-			</a> 
-		<?php } else { ?>
-			<a href='<?php echo site_url('people/follow/'.$u->id); ?>' class='btn btn-primary btn-large' id='follow_this'>
-				<i class="icon-plus icon-white"></i>
-				Follow
-			</a>
+
+</div><!-- close formButtonRow -->
+
+<div class='row-fluid'>
+	<div class='span4'>
+		<div class='chunk'>
+				<p class='nicebigtext'>Bio</p>
+
+					<?php if(!empty($u->location)) { ?>
+							<b>	Location:</b>
+									<?php if(!empty($u->location->city)) { echo $u->location->city.','; } ?>
+									<?php if(!empty($u->location->state)) { echo $u->location->state; } ?>
+									<?php if(!empty($u->location->country)) { echo $u->location->country.', '; } ?>
+						<?php }  ?>
+					<p>
+						<b>Member since: </b><?php echo user_date($u->created,"F jS Y"); ?>
+					</p>
+		
+				<p><?php if(!empty($u->bio)) { echo $u->bio; } ?></p>
+				<p><?php if(!empty($u->url)) { ?>
+					<a href="<?php echo "http://".$u->url; ?>"> <?php echo $u->url; ?></a>
+				</p><?php } ?>
+
+
+		</div> <!-- close profile info -->
+
+		<?php if(!empty($followers) || !empty($following)) { ?>
+		<!-- Followers/Following Section -->
+		<div class='chunk'>
+				<div class='thumb_grid'>
+				<p class='nicebigtext'>Followers (<?php echo count($followers); ?>) </p>
+				<?php foreach($followers as $val) { ?>
+				<a href="<?php echo site_url('people/'.$val->id); ?>" title="<?php echo $val->screen_name;?>">
+					<img src='<?php echo $val->default_photo->thumb_url;?>' />
+				</a>
+			 <?php } ?>
+				</div>
+				<div class='thumb_grid'>
+				<p class='nicebigtext'>Following (<?php echo count($following); ?>)</p>
+				<?php foreach($following as $val) { ?>
+				<a href="<?php echo site_url('people/'.$val->id); ?>" title="<?php echo $val->screen_name;?>">
+					<img src='<?php echo $val->default_photo->thumb_url;?>' />
+				</a>
+			 <?php } ?>
+				</div>
+		</div>
 		<?php } ?>
-	<?php } ?>
-	
-</div>
-<?php } ?>
 
-<?php if(!empty($u->default_location->city)) { ?>
-	<div class='profile_item'>
-		<h3>Location</h3>
-		<p>
-			<?php echo $u->default_location->city.", ".$u->default_location->state; ?>
-		</p>
-	</div>
-<?php } ?>
-<?php if(!empty($gift_circle_overlap)) { ?>
-	<div class='profile_item'>
-		<h3>Connected through</h3>
-			<?php echo UI_Results::users(array(
-					"results"=>$gift_circle_overlap,
-					"include" => array("offer_links"),
-					'mini' => TRUE
-					));  ?>
-		<!-- NOTE Follow button hidden by javascript -->
-	</div>
-<?php } ?>
+		<?php if(count($u->photos) > 1){ ?>
+		<!-- Photos Section (if more than one photo found) -->
+		<div class='chunk thumb_grid'>
+				<p class='nicebigtext'>Photos</p>
+				<p>
+				<?php foreach($u->photos as $val) { ?>
+				<a class='photo_mod' id="<?php echo site_url($val->url); ?>" href='#photo_modal' role='button' data-toggle='modal'>
+						<img src='<?php echo site_url($val->thumb_url);?>' />
+					</a>
+				<?php } ?>
+				
+				</p>
+				<div class='modal hide' id='photo_modal' tabindex='-1' role='dialog' aria-labelledby='photo_modal_label' aria-hidden='true'>
+					<div class='modal-header'>
+						<h3 id='photo_modal_label'>Photo of <?php echo $u->screen_name; ?></h3>
+					</div>
+					<div class='modal-body'>
+						<img src='' id = 'mod_image'/>
+					</div>
+					<div class='modal-footer'>
+						<button class='btn' data-dismiss='modal' aria-hidden='true'>Close</button>
+					</div>
+				</div>
+		</div>
+		<?php } ?>
+
+	</div><!-- close span -->
+	<div class = 'span4'>
+			<!--- Gifts and Needs Column -->
+		<div class='chunk'>
+
+				<span class='nicebigtext'>Gifts</span>
+			<?php if(!empty($gifts)) { ?>
+				<?php echo UI_Results::goods(array(
+					"results"=> $gifts,
+					'size' => "medium",
+					'border'=> FALSE
+				)); ?>
+				
+			<?php } else { ?>
+				<p class='chunk_empty'><?php echo $u->screen_name; ?> does not have any gifts listed.</p>
+			<?php } ?>
+
+		</div><!--close profile_gifts -->
 
 
-<div class='profile_item'>
-	<h3>Member Since</h3>
-	<p><?php echo user_date($u->created,"F jS Y");?></p>
-</div>
-<!-- 
-<div class='profile_item'>
-	<h3>Occupation</h3>
-	<p><?php if(!empty($u->occupation)) { echo $u->occupation; } ?></p>
-</div>
- -->
+		<!-- NEEDS column -->
+		<div class='chunk'>
+				<span class='nicebigtext'> Needs</span>	
+			<?php if(!empty($needs)) { ?>
 
-<?php if(!empty($followers)) { ?>
-<div class='profile_item'>
-	<h3>Followers</h3>
-	<div class='thumb_grid'>
-	<?php foreach($followers as $val) { ?>
-	 	<a href="<?php echo site_url('people/'.$val->id); ?>" title="<?php echo $val->screen_name;?>">
-	 		<img src='<?php echo $val->default_photo->thumb_url;?>' />
-	 	</a>
-	 <?php } ?>
-	</div>
-</div>
-<?php } ?>
+				<?php echo UI_Results::goods(array(
+				"results"=> $needs,
+				'size' => "medium",
+				)); ?>
+				
+			<?php } else { ?>
+				<p class='chunk_empty'><?php echo $u->screen_name; ?> does not have any needs listed.</p>
+			<?php } ?>
+		</div><!-- close profile_needs-->
+	</div><!-- close span -->
 
-<?php if(!empty($following)) { ?>
-<div class='profile_item'>
-	<h3>Following</h3>
-	<div class='thumb_grid'>
-	<?php foreach($following as $val) { ?>
-	 	<a href="<?php echo site_url('people/'.$val->id); ?>" title="<?php echo $val->screen_name;?>">
-	 		<img src='<?php echo $val->default_photo->thumb_url;?>' />
-	 	</a>
-	 <?php } ?>
-	</div>
-</div>
-<?php } ?>
-</div>
+	<div class='span4'><!-- open right content column -->
+
+		<div class='chunk'>
+			<span class='nicebigtext'>Reviews</span>
+
+				<?php if(!empty($reviews)) { ?>
+					<?php echo UI_Results::reviews(array(
+						'results'=>$reviews,
+						'size' => 'profile'
+					)); ?>
+
+				<?php } else { ?>
+					<p class='chunk_empty'><?php echo $u->screen_name;?> has not yet received any reviews.</p>
+				<?php } ?>
+
+		</div><!--close reviews_list -->
+
+		<div class='chunk'>
+			<span class='nicebigtext'>Thanks</span>	
+
+			<?php if(!empty($thanks)) { ?>
+				<?php echo UI_Results::thanks(array(
+					'results' => $thanks,
+					'size' => 'profile'
+				)); ?>
+				
+				<?php } else { ?>
+					<p class='chunk_empty'><?php echo $u->screen_name;?> has not yet received any thanks.</p>
+				<?php } ?>
+		</div><!-- close profile_thanks -->
+
+	</div><!-- close span -->
+</div><!-- close row fluid -->
 <script type='text/javascript'>
-$(function(){
+$(function() {
 
-	$('.follow').hide();
-	$(".thumb_grid a").tipTip({
-		delay: 0
-	});
-	$("ul.results_list.grid li a.result_image").tipTip({
-		delay: 0
-	});
-	$("ul.results_list.grid").each(function(){
-		$(this).children("li:last").css("margin-right",0);
-	});
-	$("ul.gray_toolbar li a").click(function(){
-		$("ul.gray_toolbar li a").removeClass("active");
-		$(this).addClass('active');
-		$(".profile_pane").hide();
-		$("#"+$(this).attr("rel")).show();
-	});
-	$(".view_all").click(function(){
-		$("ul.gray_toolbar li a").removeClass("active");
-		$("ul.gray_toolbar li").find("a."+$(this).attr("rel")).addClass("active");
-		$(".profile_pane").hide();
-		$("#"+$(this).attr("rel")).show();
-	});
+var logged_in = <?php echo json_encode($logged_in); ?>;
 
 
-	var show = <?php echo $show_gallery; ?>;
-	
-	var slides = $('#slideshow li'),
-		current = 0,
-		slideshow = {width:0,height:0};
-	if(show)		
-	{
-		$('.<?php echo $photos[0]["id"]; ?>').show();
-		
-		
-		$('#slideshow .arrow').click(function(){
-			var li            = slides.eq(current),
-				canvas        = li.find('canvas'),
-				nextIndex    = 0;
-				console.log(slides.length);
-			if(slides.length > 1)
-			{
-				
-				// Depending on whether this is the next or previous
-				// arrow, calculate the index of the next slide accordingly.
-	
-				if($(this).hasClass('next')){
-					nextIndex = current >= slides.length-1 ? 0 : current+1;
-				}
-				else {
-					nextIndex = current <= 0 ? slides.length-1 : current-1;
-				}
-		
-				var next = slides.eq(nextIndex);
-			
-					current=nextIndex;
-					next.addClass('slideActive').show();
-					$("."+$(next).attr("id")).show();
-					li.removeClass('slideActive').hide();
-					$("."+$(li).attr("id")).hide();
-			}
-		});
-	}
+$('#photo_modal').modal({show:false});
+
+$('.photo_mod').click(function() {
+	var imgUrl = $(this).attr('id');
+	console.log(imgUrl);
+	$('#mod_image').attr('src',imgUrl);
 });
+
+var fadeSection = function(param) {
+
+	if(param === 'in') {
+		$('#profile_top').css('opacity',1);
+	}else if(param == 'out') {
+		$('#profile_top').css('opacity',0.5);
+	}
+};
+if(logged_in) {
+	$('.profile_action').click( function() {
+		fadeSection('out');
+		$('.profile_form').hide();
+	});
+
+	$('#thank_button').click( function() {
+		$('#profile_thank_form').show();
+	});
+	$('#thank_cancel').click( function() {
+		fadeSection('in');
+		$('#profile_thank_form').hide();
+	});
+
+	$('#message_button').click(function() {
+		$('#profile_message_form').show();
+	});
+	$('#message_cancel').click(function() {
+		fadeSection('in');
+		$('#profile_message_form').hide();
+	});
+}
+
+});
+
 </script>

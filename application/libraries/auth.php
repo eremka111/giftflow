@@ -23,62 +23,60 @@ class Auth
 	public function __construct()
 	{
 		$this->CI =& get_instance();
-		$this->hooks =& load_class('Hooks');
 	}
 	
 	/**
 	*	Register new user
 	*
-	*	Reads from $_POST data
+	*	Reads from $post data
 	*
 	*	@return User
 	*/
-	public function register()
+	public function register($post)
 	{
 		$this->CI->load->library('datamapper');
-	
+
 		// Construct new User object
 		$this->U = new User();
 		
 		// Set $_POST data
-		$this->U->email = $this->CI->input->post('email');
-		$this->U->screen_name = $this->CI->input->post('screen_name');
-		$this->U->password = $this->CI->input->post('password');
-    $this->U->type = $this->CI->input->post('profile_type');
+		$this->U->email = $post['email'];
+		$this->U->screen_name = $post['screen_name'];
+		$this->U->password = $post['password'];
+		$this->U->type = $post['profile_type'];
 
 		
-    //Create and set Location if user provided zipcode
-    $zipcode = $this->CI->input->post('zipcode');
-    if(isset($zipcode)) 
-     {
-
+		//Create and set Location if user provided zipcode
+		//The city field uses Location autocomplete, so its more of an address
+		$city = $post['city'];
+		if(isset($city)) 
+		{
 			// Create location object and then try to save it
 			$L = new Location();
 			$this->CI->load->library('geo');
 			$Geo = new geo();
-			$full_location = $Geo->geocode($this->CI->input->post('zipcode'));
+			$full_location = $Geo->geocode($city);
 			
 			if(!empty($full_location))
 			{
-        foreach($full_location as $key=>$val)
-          {
-            $L->$key = $val;
-          }
+				foreach($full_location as $key=>$val)
+				{
+					$L->$key = $val;
+				}
         
-        
-        $L->validate();
-        if(!empty($L->duplicate_id))
-        {
-          $L = new Location($L->duplicate_id);
-        }
-        elseif(!$L->save())
-        {
-            echo $L->error->string;
-        }
-        
-      }
-       $this->U->save($L);
-    } 
+			$L->validate();
+			if(!empty($L->duplicate_id))
+			{
+			  $L = new Location($L->duplicate_id);
+			}
+			elseif(!$L->save())
+			{
+				echo $L->error->string;
+			}
+			
+		  }
+			$this->U->save($L);
+		} 
 
 
 		// Set default user role to 2, which is a normal user
@@ -87,7 +85,7 @@ class Auth
 		// Set IP address
 		$this->U->ip_address = $this->CI->input->ip_address();
 		
-		 
+		
 		// Generate forgotten password code
 		$this->U->forgotten_password_code = sha1('$'.$this->U->ip_address.'$'.microtime(TRUE));
 		
@@ -95,10 +93,10 @@ class Auth
 		if($this->U->register())
 		{
 			// Deactive user, generate activation code
-      $this->U->deactivate();
-		
-			// Hook: 'user_registration_manual'
-			$this->hooks->call('user_registration_manual', $this);
+			$this->U->deactivate();
+			
+			$this->CI->load->library('notify');
+			$this->CI->notify->alert_user_registration_manual($this);
 		}
 		
 		// Return new user
@@ -108,24 +106,31 @@ class Auth
 	/**
 	* Resets and saves new User password
 	*
-	*	@param options array
+	* @param object $user 
+	* @param array $post
 	*/
-	function reset_password($U = NULL)
+	function reset_password($user, $post)
 	{
 		
-		$this->U = new User;
+		$U = new User;
 		
-		$this->U->where('id', $U->id)->get();
+		$U->where('id', $user->id)->get();
 		
-		$this->U->password = $this->CI->input->post('password');
+		$U->password = $post['password'];
 		// Generate salt based on time and email
-		$this->U->salt =  sha1('~'.$this->U->email.'~'.microtime(TRUE));
+		$U->salt =  sha1('~'.$U->email.'~'.microtime(TRUE));
 		// Generate forgotten password code
-		$this->U->forgotten_password_code = sha1('$'.$this->U->ip_address.'$'.microtime(TRUE));
+		$U->forgotten_password_code = sha1('$'.$U->ip_address.'$'.microtime(TRUE));
 		
-		$this->U->activation_code = "0";
+		$U->activation_code = "0";
 		
-		return($this->U->save_new_password());
+		if($U->save())
+		{
+			return TRUE;
+		} else {
+			show_error('auth::reset_password');
+			return FALSE;
+		}
 			
 	}
 	
@@ -140,12 +145,12 @@ class Auth
 	}
 	
 	/**
-	*	Handles logins. Reads credentials from $_POST and validates using 
+	*	Handles logins. Reads credentials from $post and validates using 
 	*	methods stored in the User model. If successful, creates new session.
 	*
 	*	@return User
 	*/
-	public function login()
+	public function login($post)
 	{
 		$this->CI->load->library('datamapper');
 	
@@ -153,15 +158,12 @@ class Auth
 		$this->U = new User();
 		
 		// Parse $_POST input
-		$this->U->email = $this->CI->input->post('email');
-		$this->U->password = $this->CI->input->post('password');
+		$this->U->email = $post['email'];
+		$this->U->password = $post['password'];
 		
 		// Validates login info. If valid...
 		if($this->U->login())
-		{
-			// Hook: 'user_logged_in'
-			$this->hooks->call('user_logged_in', $this);
-		
+		{	
 			// ... create new session
 			$this->new_session();
 		}
@@ -178,9 +180,6 @@ class Auth
 	{
 		// Destroy CI session
 		$this->CI->session->sess_destroy();
-		
-		// Hook: 'user_logged_out'
-		$this->hooks->call('user_logged_out', $this);
 	}
 	
 	/**
@@ -200,6 +199,7 @@ class Auth
 			}
 			else
 			{
+				show_error('auth::new_session error: User not defined');
 				return FALSE;
 			}
 		}
@@ -226,7 +226,8 @@ class Auth
 			'location_country'=>$this->U->default_location->country,
 			'status'=>$this->U->status,
 			'timezone'=>$this->U->timezone,
-			'language'=>$this->U->language
+			'language'=>$this->U->language,
+			'facebook_id' => $this->U->facebook_id
 		);
 						
 		// Determine appropriate photo thumbnail source, then add to userdata
@@ -300,8 +301,9 @@ class Auth
 	*	@param string $redirect	URL to redirect to
 	*/
 	
-	public function bouncer ($min = NULL, $redirect = 'login')
+	public function bouncer ($min = NULL)
 	{
+		 
 		Console::logSpeed('start Auth::bouncer()');
 
 		if($this->validate($min))
@@ -317,14 +319,17 @@ class Auth
 			}
 			else
 			{
-				$this->CI->db->insert('redirects', array("url"=>$this->CI->uri->uri_string()));
-				redirect($redirect."/".$this->CI->db->insert_id());
+				$this->CI->session->set_flashdata('error','You need to log in first');
+				redirect('member/login');
 			}
 		}
 	}
 	
 	/** 	
 	*	Handles Facebook connect auth requests
+	*
+	*	called from member/facebook
+	*	makes heavy use of the user model's facebook_sync() function 
 	*
 	*	Outline
 	* 	1: Is the Facebook data valid?
@@ -333,61 +338,49 @@ class Auth
 	* 	2: Is Facebook ID in system?
 	*     	a: Yes. Create session for that user.
 	*     	b: No. Facebook ID not in system. Proceed to 3.
-	*	3. Is this user already logged in?
-	*		a. Yes. Link Facebook ID with that user. Fill in missing profile fields.
-	*		b. No. Proceed to step 4.
-	* 	4: Is email in system?
+	* 	3: Is email in system?
 	*     	a: Yes. Create session for that user. Link Facebook ID with that user. 
 	*		   Fill in missing profile fields.
-	*     	b: No. Create new User.
+	*     	b: No. Create new User. Log them in. Send welcome email.
 	*
 	*	@param object $data	JSON data received from Facebook
 	*/
 	function facebook( $data )
 	{
 		$this->CI->load->library('datamapper');
-	
-		// Only proceed if ID present
-		if(!empty($data->id))
+
+		if(empty($data['redirect']))
 		{
-			// Check for this Facebook ID in DB
-			$step_two = $this->CI->db->where('facebook_id',$data->id)->from('users')->get();
+			$data['redirect'] = 'welcome/home';
+		}
+	
+		// Step 1 do we have an id?
+		if(!empty($data['id'])) {
+			//if user is already logged in, redirect them to link function
+			if(isset($this->CI->session->userdata['user_id'])) {
+				return $this->facebook_link($data);
+			}
+
+			// Step 2 Check for this Facebook ID in DB
+			$id_check = $this->CI->db->where('facebook_id',$data['id'])->from('users')->get();
 			
-			// Outcome 2a: Facebook ID already in system. Logging User In.
-			if($step_two->num_rows==1)
+			// Step 2a: Facebook ID already in system. Logging User In.
+			if($id_check->num_rows==1)
 			{
-				$user = $step_two->row();
+				$user = $id_check->row();
 				$this->U = new User($user->id);
 				$this->U->facebook_sync( $data );
 				$this->new_session();
-				redirect('');
-			}
-			// eof 2a
-			
-			// Outcome 3a: User exists and is logged in. Linking GiftFlow & Facebook
-			// accounts.
-			elseif(!empty($this->CI->session->userdata['user_id']))
-      {
-				$this->U = new User( $this->CI->session->userdata['user_id'] );
-				
-				// Sync Facebook data
-				$this->U->facebook_sync($data);
-				
-				// Set success message, redirect back to Manage Linked Accounts page
-				$this->CI->session->set_flashdata('success', 'Facebook account now linked with GiftFlow');
-				redirect('account/links');
-			}
-			// eof 3a
-			
-			elseif(!empty($data->email))
-			{
+				redirect($data->redirect);
+
+			//Step 2 check for email in db
+			} elseif(!empty($data['email'])) {
 				// Check for existing accounts with provided email address
-				$step_four = $this->CI->db->where('email',$data->email)->from('users')->get();
+				$email_check = $this->CI->db->where('email',$data['email'])->from('users')->get();
 				
 				// Outcome 4a: Existing user logging in for first time using Facebook
-				if($step_four->num_rows==1)
-        {
-					$user = $step_four->row();
+				if($email_check->num_rows==1) {
+					$user = $email_check->row();
 					$this->U = new User($user->id);
 					$this->U->facebook_sync($data);
 					
@@ -395,40 +388,54 @@ class Auth
 					if($this->new_session())
 					{
 						$this->U->save();
-						// Redirect to dashboard
-						redirect('');
+						redirect($data['redirect']);
 					}
 				}
-				// eof 4a
-				
-				// Outcome 4b: New user
+			}
+			//no email and no id found, create new user
+
+			$this->U = new User();
+		
+			// Save user, sync with Facebook data
+			if($this->U->facebook_sync( $data ))
+			{
+				// Create new session
+				if($this->new_session())
+				{
+					// Redirect to facebook welcome page
+						redirect($data['redirect']);
+				}
 				else
 				{
-					$this->U = new User();
-					
-					// Save user, sync with Facebook data
-					if($this->U->facebook_sync( $data ))
-					{
-						// Create new session
-						if($this->new_session())
-						{
-							// Redirect to facebook welcome page
-							redirect('welcome/facebook');
-						}
-						else
-						{
-							// @todo bad session error
-						}
-					}
-					else
-          {
-						// @todo facebook data sync error
-					}
+					show_error('Error creating new session');
 				}
-				// eof 4b
+			} else {
+				show_error("Error synching facebook data");
 			}
-		}		
+		}
 	}
+
+	/**
+	 * Takes data returned by facebook and syncs it with logged_in user
+	 */
+	function facebook_link($data)
+	{
+		if(!empty($this->CI->session->userdata['user_id']))
+		{
+			$this->U = new User( $this->CI->session->userdata['user_id'] );
+			
+			// Sync Facebook data
+			$this->U->facebook_sync($data);
+
+			$this->new_session();
+			
+			// Set success message, redirect back to Manage Linked Accounts page
+			$this->CI->session->set_flashdata('success', 'Facebook account now linked with GiftFlow');
+			redirect('account/links');
+		}
+	}
+
+			
 	
 	/**
 	*	Logs in users authenticated by OpenID
@@ -443,10 +450,6 @@ class Auth
 			return false;
 		}
 		$this->U = $U;
-		
-		// Hook: 'user_logged_in'
-		$this->hooks->call('user_logged_in', $this);
-		$this->hooks->call('user_logged_in_openid', $this);
 
 		// ... create new session
 		$this->new_session();
@@ -471,10 +474,6 @@ class Auth
 		
 		$this->U = $U;
 		
-		// Hook: 'user_logged_in'
-		$this->hooks->call('user_logged_in', $this);
-		$this->hooks->call('user_logged_in_openid', $this);
-
 		// ... create new session
 		$this->new_session();
 		

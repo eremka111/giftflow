@@ -2,7 +2,6 @@
 class Root extends CI_Controller {
 
 	var $data;
-	
 	function __construct()
 	{
 		parent::__construct();
@@ -10,20 +9,21 @@ class Root extends CI_Controller {
 		$this->data = $this->util->parse_globals();
 	}
 
+
 	function index()
 	{
-		if(!$this->auth->validate(1))
-		{
-			$this->_signup();
-		}
-		else
-		{
-			redirect('you');
-		}
+			$this->_landing_page();
 	}
 	
-	function _signup()
+	function _landing_page()
 	{
+		
+		// Load categories
+		$this->data['categories'] = $this->db->order_by("name","ASC")
+			->where('parent_category_id IS NOT NULL', null,false)
+			->get("categories")
+			->result();
+
 		$this->data['title'] = "Welcome";
 		$this->load->view('header', $this->data);
 		$this->load->view('index');

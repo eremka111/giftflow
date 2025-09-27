@@ -1,96 +1,72 @@
 <ul id='you_sidebar' class='sidebar_menu'>
-	<!--<li style='margin-bottom: 22px;'>
-		<img alt="You" src="<?php echo base_url();?>assets/images/headings/you_menu.png">
-	</li>-->
-	<li <?php if($segment[2] == 'welcome') { echo "class='active'"; } ?> >
-		<a href='<?php echo site_url('you/welcome/?welcome=show'); ?>'> 
-			Welcome
-		</a>
-	</li>
-	
-	<li <?php if(!$welcome && $segment[1]=="you" && (empty($segment[2])) || $segment[2]=='index'){ echo  "class='active'"; } ?>>
-		<a href='<?php echo site_url('you');?>'> 
+	<li <?php if($segment[2] == 'activity'){ echo  "class='active'"; } ?>>
+		<a href='<?php echo site_url('you/activity');?>'> 
 			Activity Feed
 		</a>
 	</li>
-	<li <?php if($segment[2]=='gifts'){ echo  "class='active'"; } ?>>
-		<a href='<?php echo site_url('you/gifts');?>'> 
-			Your Gifts
+	<li <?php if($segment[2]=='inbox' || $segment[2] == 'view_thankyou' || $segment[2] == 'view_transaction' || $segment[2] == 'view_thread' || $segment[2] == 'add_thank'){ echo  "class='active'"; } ?>>
+		<a href='<?php echo site_url('you/inbox');?>'> 
+			Inbox<?php if($activeInbox) { echo " (".$inboxCount.")"; }?>
 		</a>
 	</li>
-	<li <?php if($segment[2]=='needs'){ echo  "class='active'"; } ?>>
-		<a href='<?php echo site_url('you/needs');?>' > 
-			Your Needs
+	<li <?php if($segment[3]=='gift'){ echo  "class='active'"; } ?>>
+		<a href='<?php echo site_url('you/list_goods/gift');?>'> 
+			Gifts
+		</a>
+	</li>
+	<li <?php if($segment[3]=='need'){ echo  "class='active'"; } ?>>
+		<a href='<?php echo site_url('you/list_goods/need');?>' > 
+			Needs
 		</a>
 	</li>
 	<li <?php if($segment[2]=='watches'){ echo  "class='active'"; } ?>>
 		<a href='<?php echo site_url('you/watches');?>' > 
-			Your Watches
+			Watches
 		</a>
 	</li>
-	<li <?php if($segment[2]=='transactions'){ echo  "class='active'"; } else if($trans_check) { echo "id='inbox_new'"; } ?>>
-		<a href='<?php echo site_url('you/transactions');?>'> 
-      Your Inbox<?php if($trans_check) { echo "(".$new_trans.")"; }?>
+	<li <?php if($segment[2]=='following'){ echo  "class='active'"; } ?>>
+		<a href='<?php echo site_url('you/following');?>' > 
+			Following
 		</a>
-		<ul>
-			<li>
-				<a href="<?php echo site_url("you/transactions/?direction=incoming");?>">
-					Incoming
-				</a>
-			</li>
-			<li>
-				<a href="<?php echo site_url("you/transactions/?direction=outgoing");?>">
-					Outgoing
-				</a>
-			</li>
-			<li>
-				<a href="<?php echo site_url("you/transactions/?status=completed");?>">
-					Reviews
-				</a>
-			</li>
-		</ul>
 	</li>
 	<li <?php if($segment[1]=='account'){ echo  "class='active'"; } ?>>
 		<a href='<?php echo site_url('account');?>' > 
-			Your Account
+			Account
 		</a>
-		<ul>
-			<li>
+		 <ul id='account_menu'>
+			<li <?php if($segment[2]=='profile'){ echo  "class='active'"; } ?>>
 				<a href="<?php echo site_url("account/profile");?>">
 					Edit Profile
 				</a>
 			</li>
-			<li>
+			<li <?php if($segment[2]=='photos'){ echo  "class='active'"; } ?>>
 				<a href="<?php echo site_url("account/photos");?>">
 					Photos
 				</a>
 			</li>
-			<li>
+			<li <?php if($segment[2]=='locations'){ echo  "class='active'"; } ?>>
 				<a href="<?php echo site_url("account/locations");?>">
 					Locations
 				</a>
 			</li>
-			<li>
+<!--
+			<li <?php if($segment[2]=='links'){ echo  "class='active'"; } ?>>
 				<a href="<?php echo site_url("account/links");?>">
 					Linked Accounts
 				</a>
 			</li>
-			<li>
+-->
+			<li <?php if($segment[2]=='settings'){ echo  "class='active'"; } ?>>
 				<a href="<?php echo site_url("account/settings");?>">
 					Settings
 				</a>
 			</li>
-			<li>
+			<li <?php if($segment[2]=='delete_user'){ echo  "class='active'"; } ?>>
 				<a href="<?php echo site_url('account/delete_user');?>" id='delete_user'>
 					Delete account
 				</a>
 			</li>
 			
 		</ul>
-	</li>
-	<li <?php if($segment[2]=='donate' || $segment[1]=="donate"){ echo  "class='active'"; } ?>>
-		<a href='<?php echo site_url('about/donate');?>' > 
-			Donate
-		</a>
 	</li>
 </ul>

@@ -1,41 +1,48 @@
-<div id='dash_header' style='padding: 0px 0px 0px 100px;'> 
-
-<p class='nicebigtext'>
-	<span class='green'>Give</span> something away.
-	<span class='green'>&nbsp&nbspReceive</span> someone else's gift.
-	<span class='green'>&nbsp&nbspPay</span> it forward.
-	</p>
-</div>
-<div id='landing_left' >
-			
-			<div id='video'>
-				<object><param name="movie" value="http://www.youtube.com/v/0wLNXFeZbBU&hl=en_US&fs=1&rel=0"></param><param name="allowFullScreen" value="true"></param><param name="allowscriptaccess" value="always"></param><embed src="http://www.youtube.com/v/0wLNXFeZbBU&hl=en_US&fs=1&rel=0" type="application/x-shockwave-flash" allowscriptaccess="always" allowfullscreen="true" width="425" height="344"></embed></object>
+	
+<div class='row' id='landing_page'>
+	<div class ='row-fluid'>
+			<div class='span12' id='landing_header'> 
+				<p class='nicebigtext landing_text' style='text-align:center'>
+					<span class='green'>Give</span> what you can.
+					<span class='green'>&nbsp&nbspAsk</span> for what you need.
+					<span class='green'>&nbsp&nbspPay</span> it forward.
+				</p>
 			</div>
-</div>
-<div id='landing_right'>
-		
-		<p class ='nicebigtext'>Log in now and start giving</p>
-		<div class='landing_panel'>
-			<a class='btn btn-primary btn-large' href='<?php echo site_url('register'); ?>'>Sign Up Now</a>
-			<a class='btn btn-large' href='<?php echo site_url('about/tour'); ?>'>Take The Tour</a>
-			<p id='one'>GiftFlow is a non-profit. Please <a href='about/donate'>Donate Here</a></p>
-			<p>Welcome to our new Beta version! </p>
+		</div>
+		<div class='row' id='landing_categories'>
+			<div class='span10 offset1 center category_box'>	
+				<?php foreach($categories as $val) { ?>
+				<a href="<?php echo site_url('find/gifts/?category_id='.$val->id);?>" title="<?php echo $val->name;?>" class='result_sprite category_icon medium-<?php echo $val->id;?>'>
+					</a>
+				<?php } ?>
+			</div>
+			<div class='span1'></div>
+				
+
+		</div>
+		<div class='row'>
+			<div class='span8 offset2 landing_search'>
+
+				<form class='form-search' method='post' action='<?php echo site_url("find/gifts"); ?>'>
+						<div class='landing_input'>
+						<input name='q'  class='landing_search_input input-large search-query' type='text' placeholder='What do you need?'>	
+						<button value='submit' class='btn btn-large'>Search Gifts</button>
+						</div>
+				</form>
+			</div>
 		</div>
 </div>
-
-
 <script type='text/javascript'>
-$(function(){
-	
-	var video = $('#video');
-	var thumb = $('#video_thumb');
-	var overlay = $('#landing_overlay');
-	
-	$('#video_thumb').click(function() {
-		video.fadeIn('slow');
-		overlay.fadeOut('fast');
-		thumb.fadeOut('fast');
-	});
-	
+
+$(function () {
+
+$('.typeToggle').click( function() {
+	var type = $(this).attr('value');
+	$('#searchType').val(type); 
 });
+
+$('.category_icon').tooltip();
+
+});
+
 </script>

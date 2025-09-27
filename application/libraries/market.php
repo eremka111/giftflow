@@ -71,6 +71,9 @@ class Market
 		$this->CI->load->library('datamapper');
 		$this->CI->load->library('Search/Good_search');
 		$this->CI->load->library('Search/Transaction_search');
+		$this->CI->load->library('Event_logger');
+		$this->CI->load->library('Notify');
+		$this->data = $this->CI->util->parse_globals();
 	}
 	
 	/**
@@ -84,19 +87,19 @@ class Market
 	*	@param string $options['demands'][0]['type']
 	*	@param string $options['note']
 	*	@param int $options['decider_id']
+	*	@param strin $options['hook']
 	*	@return boolean
 	*/
 	public function create_transaction($options)
 	{
 		// Create pending transaction
 		$Transaction = new Transaction();
-		$Transaction->status = "pending";
+		$Transaction->status = "active";
 		
 		// Save Transaction
 		if(!$Transaction->save())
 		{
-			// @todo handle transaction saving error
-			return FALSE;
+			show_error('Error saving transaction');
 		}
 	
 		// Person not demanding Good. Passed in $options seperate from $demands
@@ -109,12 +112,12 @@ class Market
 		foreach($options['demands'] as $key=>$val)
 		{
 
-			// Good being requested
+			// Good being requested, include disabled goods!
 			$Good_search = new Good_search;
 			$Good = $Good_search->get(array(
 				"good_id"=>$val['good_id']
 			));
-			
+
 			//Set message passed in demand
 			if(!empty($val['note']) && empty($this->note))
 			{
@@ -147,7 +150,7 @@ class Market
 		// Before saving demands, validate that a Decider has been found
 		if(empty($this->Decider))
 		{
-			return FALSE;
+			show_error('Error finding Decider');
 		}
 		
 		// Save each Demand in $this->Demands array
@@ -155,8 +158,7 @@ class Market
 		{
 			if(!$val->save())
 			{
-				// @todo handle demand saving error
-				return FALSE;
+				show_error('Error saving demands array');
 			}
 		}
 	
@@ -164,14 +166,12 @@ class Market
 		// Creates 2 rows in transactions_users table
 		if(!$Transaction->save_user($this->Demander))
 		{
-			// @todo handle user saving error
-			return FALSE;
+			show_error('Error saving Demander to transaction');
 		}
 			
 		if(!$Transaction->save_user($this->Decider))
 		{
-			// @todo handle user saving error
-			return FALSE;
+			show_error('Error saving Decider to transaction');
 		}
 		if(!empty($this->note))
 		{
@@ -183,23 +183,24 @@ class Market
 				"user_id"=>$this->Demander->id
 				)))
 			{
-				show_error("Error saving conversation.");
-				return FALSE;
+			show_error("Error saving conversation.");
 			}
 		}
-		
-		// Load fully formed transaction factory result of new transaction
-		$TS = new Transaction_search;
-		$hook_data = (object) array(
-			"transaction"=> $TS->get(array(
-				"transaction_id"=>$Transaction->id,
-				"include_messages" => FALSE			
-				)),
-			"note" => $this->note
-		);
+			// Load fully formed transaction factory result of new transaction
+			$TS = new Transaction_search;
+			$event_data = (object) array(
+				"transaction"=> $TS->get(array(
+					"transaction_id"=>$Transaction->id,
+					"include_messages" => FALSE			
+					)),
+				"note" => $this->note,
+				'return_url' => site_url('login/?return_url=you/view_transaction/'.$Transaction->id),
+				'notify_id' => $this->Decider->id
+			);
+		$this->CI->event_logger->transaction_new($event_data);
+		$this->CI->notify->alert_transaction_new($event_data);
 
-		// Hook: `transaction_new`
- 		$this->CI->hooks->call('transaction_new', $hook_data);
+		$this->updateTransactionTimestamp($Transaction->id);
 
 		return TRUE;
 	}
@@ -264,16 +265,19 @@ class Market
 		
 		// Load fully formed transaction factory result of new transaction
 		$TS = new Transaction_search;
-		$hook_data = (object) array(
+		$event_data = (object) array(
 			"transaction"=> $TS->get(array(
 				"transaction_id"=>$Transaction->id,
 				"include_messages"=>FALSE
 			)),
-			"message" => $options['message']
+			"message" => $options['message'],
+			'return_url' => site_url('login/?return_url=you/view_transaction/'.$Transaction->id)
 		);
+		$event_data->notify_id = $event_data->transaction->decider->id;
 		
-		// Hook: 'transaction_cancelled'
-		$this->CI->hooks->call('transaction_cancelled', $hook_data);
+		$this->CI->event_logger->transaction_cancelled($event_data);
+		
+		$this->updateTransactionTimestamp($Transaction->id);
 		
 		return TRUE;
 	}
@@ -333,16 +337,21 @@ class Market
 		
 		// Load fully formed transaction factory result of new transaction
 		$TS = new Transaction_search;
-		$hook_data = (object) array(
+		$event_data = (object) array(
 			"transaction"=> $TS->get(array(
 				"transaction_id"=>$Transaction->id,
 				"include_messages" => FALSE
 			)),
-			"message" => $options['message']
+			"message" => $options['message'],
+			'return_url' => site_url('login/?return_url=you/view_transaction/'.$Transaction->id)
 		);
+
+		$event_data->notify_id = $event_data->transaction->demander->id;
 		
-		// Hook: 'transaction_declined'
-		$this->CI->hooks->call('transaction_declined', $hook_data);
+		
+		$this->event_logger->transaction_declined($event_data);
+		$this->updated('transaction_declined',$event_data);
+		$this->updateTransactionTimestamp($Transaction->id);
 		
 		return TRUE;
 	}
@@ -383,16 +392,23 @@ class Market
 		
 		// Load fully formed transaction factory result of new transaction
 		$TS = new Transaction_search;
-		$hook_data = (object) array(
+		$event_data = (object) array(
 			"transaction"=> $TS->get(array(
 				"transaction_id"=>$Transaction->id,
 				"include_messages" => FALSE
 			)),
-			"message" => $options['message']
+			"message" => $options['message'],
+			'return_url' => site_url('you/view_transaction/'.$Transaction->id)
 		);
+		$event_data->notify_id = $event_data->transaction->demander->id;
 				
-		// Hook: 'demand_activated'
-		$this->CI->hooks->call("transaction_activated",$hook_data);
+		//$E = new Event_logger();
+		//$E->transaction_activated('transaction_activated',$event_data);
+		$this->CI->event_logger->transaction_activated($event_data);
+
+		//$N = new Notify();
+		//$N->alert_transaction_activated('transaction_activated',$event_data);
+		$this->CI->notify->alert_transaction_activated($event_data);
 		
 		return TRUE;
 	}
@@ -406,6 +422,7 @@ class Market
 	*	@param string $options['rating']		Rating of review
 	*	@param int $options['reviewer_id']		Reviewer ID
 	*	@param object $options['transaction_data']	Data of transaction
+	*	@param string $options['hook']			which hook should be called review/thankyou
 	*	@return boolean
 	*/
 	public function review($options)
@@ -454,34 +471,31 @@ class Market
 		
 		// Prep hook data
 		$TS = new Transaction_search;
-		$hook_data = (object) array(
+		$event_data = (object) array(
 			"transaction"=> $TS->get(array(
 				"transaction_id"=>$Transaction->id,
 				"include_messages" => FALSE,
 				"include_reviews" => TRUE
-			))
+			)),
+			'return_url' => site_url('you/view_transaction/'.$Transaction->id),
+			'notify_id' => $R->reviewed_id
 		);
-		//iterate over the transaction and add ReviewER and ReviewED user arrays to hook_data
-		foreach($hook_data->transaction->users as $key=>$val)
+		//iterate over the transaction and add ReviewER and ReviewED user arrays to event_data
+		foreach($event_data->transaction->users as $key=>$val)
 		{
 			if($val->id == $options['reviewer_id'])
 			{
-				$hook_data->reviewer = $val;
+				$event_data->reviewer = $val;
 			}
 			else if($val->id != $options['reviewer_id'])
 			{
-				$hook_data->reviewed = $val;
+				$event_data->reviewed = $val;
 			}
 		}
 		
-		
-		// Hook: `transaction_reviewed`
-		$this->CI->hooks->call("review_new", $hook_data);
+		$this->CI->event_logger->review_new($event_data);
+		$this->CI->notify->review_new($event_data);
 
-		// Attempt to change status to completed
-		$this->complete(array(
-			"transaction_id"=>$Transaction->id
-		));
 
 		return TRUE;
 	}
@@ -498,34 +512,35 @@ class Market
 		
 		// Load transaction
 		$Transaction = new Transaction($options['transaction_id']);
-		
-		// Make sure that both reviews have been written
-		if(!$Transaction->has_both_reviews())
-		{
-			// @todo handle error
-			return FALSE;
-		}
 	
-		$Transaction->status = "completed";
-		
-		if(!$Transaction->save())
+		if($Transaction->status == 'active')
 		{
-			//@todo handle error
+			$Transaction->status = "completed";
+		
+			if(!$Transaction->save())
+			{
+				show_error('Error saving Transaction');
+			}
+		
+			// Prep hook data
+			$TS = new Transaction_search;
+			$event_data = (object) array(
+				"transaction"=> $TS->get(array(
+					"transaction_id"=>$Transaction->id
+			)));
+			$event_data->return_url = site_url('you/view_transaction/'.$Transaction->id);
+
+			$N = new Notify();
+			$N->alert_transaction_completed($event_data);
+		
+			$E = new Event_logger();
+			$E->basic('transaction_completed',$event_data);
+
+			return TRUE;
+		} else {
+			show_error('Transaction not yet active');
 			return FALSE;
 		}
-		
-		// Prep hook data
-		$TS = new Transaction_search;
-		$hook_data = (object) array(
-			"transaction"=> $TS->get(array(
-				"transaction_id"=>$Transaction->id
-			))
-		);
-		
-		// Hook: `transaction_reviewed`
-		$this->CI->hooks->call("transaction_completed", $hook_data);
-		
-		return TRUE;
 	}
 	
 	/**
@@ -554,19 +569,39 @@ class Market
 		}
 		
 		$Message = $Conversation->get_latest_message();
+
+
+		$notify_data = array();
+
+		foreach($Conversation->users as $val) 
+		{
+			if($val->id != $this->data['logged_in_user_id'])
+			{
+				$notify_data['recipient_id'] = $val->id;
+				$notify_data['recipient_email'] = $val->email;
+				$notify_data['recipient'] = $val->screen_name;
+				$notify_data['notify_user_id'] = $val->id;
+			}
+		}
+
 		
+		$notify_data["message"] = $options['body'];
+		$notify_data['return_url'] = site_url('you/view_transaction/'.$options['transaction_id']);
+		
+
 		// Prep hook data
 		$TS = new Transaction_search;
-		$hook_data = (object) array(
-			"transaction"=> $TS->get(array(
-				"transaction_id"=>$options['transaction_id']
-			)),
-			"message_id"=>$Message->id,
-			"conversation"=>$Conversation
-		);
-		
-		// Hook: `transaction_message`
-		$this->CI->hooks->call("transaction_message", $hook_data);
+
+		$notify_data["transaction"] = $TS->get(array("transaction_id"=>$options['transaction_id']));
+		$notify_data["message_id"] = $Message->id;
+		$notify_data["transaction_id"] = $options['transaction_id'];
+
+		$notify_data = (object) $notify_data;
+
+		$this->CI->event_logger->transaction_message($notify_data);
+
+		$this->CI->notify->alert_transaction_message($notify_data);
+		$this->updateTransactionTimestamp($options['transaction_id']);
 		
 		return TRUE;
 	}
@@ -577,9 +612,9 @@ class Market
 	*	@param array $params
 	*	@param object $data
 	*/
-	public function updated($params, $data)
+	public function updateTransactionTimestamp($transactionId)
 	{
-		$this->CI->db->where('id',$data->transaction->id)
+		$this->CI->db->where('id', $transactionId)
 			->update('transactions', array(
 				"updated"=> date("Y-m-d H:i:s")
 			));

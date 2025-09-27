@@ -11,6 +11,9 @@
 	</td>
 </tr>
 <tr>
+
+	<?php if(!empty($fbookUrl)){ ?>
+	<!-- Facebook Login Button -->
 	<td style='vertical-align: top;'>
 		<p>
 			<a style='border-bottom: 0px;' href='<?php echo $fbookUrl; ?>'>
@@ -19,33 +22,42 @@
 		</p>
 	</td>
 	<td></td>
+
+	<!-- eof Facebook Login Button -->
+	<?php } ?>
+	
 	<td class="span6">
+		<span class='error'><?php echo $error_string; ?> </span>
 		<form action="<?php echo site_url('member/login'); ?>" method="post">
-			<p>
-				<label>Email Address</label>
-			</p>
-			<p>
+			<fieldset>
+			<div class="control-group">
+				<label for="email">Email Address</label>
 				<input type="text" name='email' class='required email span6' id='email' value='' />
-			</p>
-			<p>
-				<label>Password</label>
-			</p>
-			<p>
+			</div>
+			<div class="control-group">
+				<label for="password">Password</label>
 				<input type='password' name='password' class='required span6' id='password' value='' />
-			</p>
-			<p>
+			</div>
+			<div class="control-group">
 				<input type='hidden' name='redirect' value="<?php if(!empty($redirect)) echo $redirect; ?>" />
 				<input type='submit' class='btn btn-primary btn-large' value="Login Now" />
-			</p>
+			</div>
 		</form>
-		<p style='font-size: .8em;'>No account? <a href="<?php echo site_url('register'); ?>">Click here to sign up.</a></p>
-		<p style='font-size: .8em;'>Forgot your password?  <a href="<?php echo site_url('member/forgot_password'); ?>">Click here to reset it.</a>
+		<p><a href="<?php echo site_url('member/forgot_password'); ?>">Forgot your password?</a></p>
 	</td>
 </tr>
 </table>
 </div>
 <script type='text/javascript'>
 $(function(){
-	$("#login form").validate();
+	$("#login form").validate({
+		highlight: function(label) {
+			$(label).closest('.control-group').addClass('error')
+											  .removeClass('success');
+	  	},
+	  	success: function(label) {
+		  	label.hide().closest('.control-group').addClass('success');
+	  	}
+	});
 });
 </script>

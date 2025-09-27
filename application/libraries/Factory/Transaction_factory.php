@@ -112,7 +112,6 @@ class Transaction_factory {
 			// Add Demand to its parent Transaction
 			$this->Transactions[$Demand->transaction_id]->demands[] = $this->Demands[$key];
 		}
-		
 		// Build Transactions
 		foreach($this->Transactions as $key=>$Transaction)
 		{
@@ -270,6 +269,14 @@ class Transaction_factory {
 			
 			if(!empty($this->Transactions[$review->transaction_id]))
 			{
+
+				//reviews should be assigned the user who wrote them
+				foreach($this->Transactions[$review->transaction_id]->users as $use) {
+					if($review->reviewer_id == $use->id) {
+						$review->reviewer = $use;
+					}
+				}
+
 				$this->Transactions[$review->transaction_id]->reviews[] = $review;
 			}
 		}
@@ -325,6 +332,14 @@ class Transaction_factory {
 	
 	/**
 	*	Generate language data which is added to Transactions
+	*	The language object contains three summaries:
+	*	decider_summary
+	*	demander_summary
+	*	overview_summary
+	*
+	*	@author Hans Schoenburg
+	*
+	*	@todo refactor this rats nest!
 	*/
 	function set_language()
 	{
@@ -336,7 +351,8 @@ class Transaction_factory {
 			$demander_link = "<a href='".site_url('people/'.$val->demander->id)."'>".$val->demander->screen_name."</a> ";
 			$decider_link = "<a href='".site_url('people/'.$val->decider->id)."'>".$val->decider->screen_name."</a> ";
 
-			// Decider summary
+
+	//Set the Decider summary - this is seen by the user who received the request
 			$decider_summary_demands = array();
 			$decider_summary = "";
 			
@@ -344,15 +360,7 @@ class Transaction_factory {
 			foreach($val->demands as $demand)
 			{
 				$brief="";
-				if($demand->type == "give" && $demand->good->type == "need")
-				{
-					//This is a bit of a band-aid fix for when someone offers to "give to" another's need. requires different language than the usual "give"
-					$type = "give to";
-				}
-				else
-				{
 				 $type = $demand->type;
-				}
 				
 				if($demand->type != "fulfill")
 				{
@@ -363,20 +371,11 @@ class Transaction_factory {
 					case "take":
 						$brief .= " has requested your";
 						break;
-					case "borrow":
-						$brief .= " would like to borrow your";
-						break;
-					case "fulfill":
-						$brief .= " to fulfill ";
-						break;
-					case "give to":
-						$brief .= "would like to help with your need";
-						break;
-					case "share":
-						$brief .= "has offered to share ";
-						break;
 					case "give":
 						$brief .= "has offered you ";
+						break;
+					case "thank":
+						$brief .= 'has thanked you for ';
 						break;
 					default:
 						$brief .= "wants to ".$type." your";
@@ -388,8 +387,10 @@ class Transaction_factory {
 			$decider_summary .= implode(" ",$decider_summary_demands);
 			
 			$this->Transactions[$key]->language->decider_summary = $decider_summary;
-			
-			// Demander summary
+
+
+	//Set the demander summary - this is seen by the user who initated the interaction
+
 			$demander_summary = "";
 			$demander_summary_demands = array();
 			
@@ -403,23 +404,16 @@ class Transaction_factory {
 					case "take":
 						$brief = "You asked for ".$thing." from ";
 						break;
-					case "borrow":
-						$brief = "You asked to borrow ".$thing." from ";
-						break;
-					case "fulfill":
-						$brief = "to fulfill ".$thing;
-						break;
-					case "share":
-						$brief = "You offered to share ".$thing." with ";
-						break;
 					case "give":
 						$brief = "You offered to give ".$thing." to ";
 						break;
+					case "thank":
+						$brief = "You thanked ".$decider_link." for ".$thing;
 					default:
-						$brief = "want to ".$type." your ".$thing." to ";
+						$brief = "would like to ".$type." your ".$thing." to ";
 				}
 				
-				if($demand->type != "fulfill")
+				if($demand->type != 'thank')
 				{
 					$brief .= $decider_link;
 				}
@@ -429,11 +423,10 @@ class Transaction_factory {
 			$demander_summary .= implode(" ",$demander_summary_demands);
 			
 			$this->Transactions[$key]->language->demander_summary = $demander_summary;
+
+
+	//Set overview summary - this is seen in the activity feeed
 			
-			//Overview_summary
-			//Hans - I think the only time we would use the overview summary is in a 'news feed'
-			// like context. I don't think it is a good idea to publish active transactions in the news feed, but completed ones should be fine
-			// So I re-wrote this to be completed overview, refering to transactions in past tense
 			$overview_summary = "";
 			$overview_summary_demands = array();
 			
@@ -441,34 +434,31 @@ class Transaction_factory {
 			foreach($val->demands as $demand)
 			{
 				$brief = "";
-				$thing = " <a href='".site_url($demand->good->type.'s/'.$demand->good->id)."'>".$demand->good->title."</a>";
-				
-				if($demand->type != "fulfill")
-				{
-					$brief = $demander_link;
+				if($demand->good->status == 'active') {
+					$thing = " <a href='".site_url($demand->good->type.'s/'.$demand->good->id)."'>".$demand->good->title."</a>";
+				} else {
+					$thing = " <a class='disabled_gift' title='This gift is no longer available' href='#'>".$demand->good->title."</a>";
 				}
+
+				$type = $demand->type;
+				$brief = $demander_link;
 				
 				switch($demand->type)
 				{
 					case "take":
 						$brief .= " received ".$thing." from ";
 						break;
-					case "borrow":
-						$brief .= " borrowed ".$thing." from ";
-						break;
-					case "fulfill":
-						$brief .= " to fulfill ".$thing;
-						break;
-					case "share":
-						$brief .= " share ".$thing." with ";
-						break;
 					case "give":
 						$brief .= " gave ".$thing." to ";
 						break;
+					case 'thank':
+						$brief .= " thanked ".$decider_link." for ".$thing;
+						break;
 					default:
-						$brief .= " want to ".$type." your ".$thing." to ";
+						$brief .= $type;
+						break;
 				}
-				if($demand->type != "fulfill")
+				if($demand->type != 'thank')
 				{
 					$brief .= $decider_link;
 				}

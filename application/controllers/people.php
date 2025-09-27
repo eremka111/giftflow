@@ -15,15 +15,18 @@ class People extends CI_Controller {
 	{
 		parent::__construct();
 		$this->util->config();
-		$this->data = $this->util->parse_globals(array(
-			"geocode_ip"=>TRUE
-		));
+		$this->data = $this->util->parse_globals();
 		//$this->load->library('finder');
 		$this->load->library('geo');
 		$this->load->library('datamapper');
 		$this->load->library('Search/User_search');
 		$this->load->library('Search/Good_search');
 		$this->load->library('Search/Transaction_search');
+		$this->load->library('Search/Review_search');
+		$this->load->library('Search/Thankyou_search');
+		$this->load->library('market');
+		$this->load->library('event_logger');
+		$this->load->library('notify');
 		
 		if(!empty($this->data['logged_in_user_id']))
 		{
@@ -31,101 +34,17 @@ class People extends CI_Controller {
 		}
 	}
 	
+
 	public function index()
-  {
-    $newest_options = array(
-      'order_by' => 'U.created',
-      'sort' => 'DESC',
-      'exclude_logged_in_user'=>TRUE
-    );
-
-		$newest_search = new User_search();
-		$this->data['results'] = $newest_search->find($newest_options);
-
-		$this->data['title'] = "People";	
-		$this->load->view('header', $this->data);
-		$this->data['menu'] = $this->load->view('people/includes/menu',$this->data, TRUE);
-		$this->load->view('people/index', $this->data);
-		$this->load->view('footer', $this->data);
+	{
+					redirect('find/?type=people');
 	}
 
-  public function browse()
-  {
-      
-    $order = ($_POST['order_by'] == 'newest' ? 'U.created' : 'location_distance');
-    $sort = ($_POST['order_by'] == 'newest' ? 'DESC' : 'ASC');
-
-    $type = $_POST['type'];
-
-    $P = new User_search();
-
-    $options = array(
-      'order_by' => $order,
-      'type' => $type,
-      'sort' => $sort,
-      'limit' => 10,
-      'location' => $this->data['userdata']['location']
-    );
-
-    $this->load->library('factory');
-    $results = $P->find($options);
-    $this->data['results'] = $this->factory->users_ajax($results, $sort);
-
-
-    //Encode in JSON
-    $data = array(
-      "center" => '',
-      "total_results" =>count($this->data['results']),
-      "results"=>$this->data['results']
-    );
-    $this->data['results_json'] = json_encode($data);
-
-        return $this->util->json($this->data['results_json']);
-  }
-
-  public function test () 
-  {
-
-		$nearby_search = new User_search;
-		
-		// If user logged in and location data is available, filter by it
-		if(!empty($this->data['logged_in_user_id']) && !empty($this->data['userdata']['location']))
-		{
-			$nearby_options = array(
-				"location"=>$this->data['userdata']['location'],
-				"order_by"=>"location_distance",
-				"sort"=>"ASC",
-				"exclude_logged_in_user"=>TRUE,
-				"radius" => 100
-			);
-		}
-		
-		// Else try to geolocate via their IP address.
-		// If that doesn't work, skip geo filtering
-		else
-		{
-			//$location = $this->geo->geocode_ip();
-			
-			// Geocode via IP successful, filtering
-			if(!empty($location))
-			{
-				$nearby_options = array(
-					"location"=>$location,
-					"order_by"=>"location_distance",
-					"sort"=>"ASC",
-					"radius" => 100
-				);
-			}
-			
-			// No location found
-			else
-			{
-				$nearby_options = array();
-			}
-		}
-  }
-		
-
+	/**
+	 *  Loads users facebook friends 
+	 *  NON FUNCTIONAL
+	 *  @todo fix this! 
+	 */
 	public function friends()
 	{
 		// Page Title
@@ -145,7 +64,6 @@ class People extends CI_Controller {
 				// Search for matching users
 				if($friend_ids)
 				{
-					$this->load->library('Search/User_search');
 					$this->data['friends']['facebook'] = $this->user_search->find(array(
 						"facebook_id"=>$friend_ids,
 						"following_stats"=>TRUE,
@@ -162,7 +80,6 @@ class People extends CI_Controller {
 				$email_list = $this->google->contacts_email_list();
 				
 				// Search for matching users
-				$this->load->library('Search/User_search');
 				$this->data['friends']['google'] = $this->user_search->find(array(
 					"email"=>$email_list,
 					"following_stats"=>TRUE,
@@ -177,7 +94,11 @@ class People extends CI_Controller {
 		$this->load->view('people/friends', $this->data);
 		$this->load->view('footer', $this->data);
 	}	
-	
+
+	/**
+	 *  Displays lists of users, i.e. following, giftcircle, etc
+	 * @param type $type 
+	 */
 	function lists($type = "following")
 	{
 		$this->auth->bouncer(1);
@@ -188,7 +109,7 @@ class People extends CI_Controller {
 		if($type=="giftcircle")
 		{
 			$this->data['title'] = "Gift Connections";	
-			$this->data['heading'] = "People connected to you via gifts.";
+			$this->data['heading'] = "Members connected to you via gifts.";
 			$this->data['results'] = $GC->gift_circle($options = array('user_id' => $this->U->id));
 
 		}
@@ -210,15 +131,18 @@ class People extends CI_Controller {
 	}
 
 	/**
-	*	Displays user profile
+	*   Displays user profile
+	*   handles incoming user actions from profile
 	*/
 	function profile($id=NULL)
 	{
 		
  		if(!empty($_POST))
  		{
- 			$this->_offer();
+			$this->message();
+			//The thank form on the user profile goes to the thank controller
  		}
+
 		// Default behavior:
 		// Segment one == "people" and  segment two == user id and segment three == method
 		
@@ -273,133 +197,50 @@ class People extends CI_Controller {
 		
 
 		// Construct user object
-		$U = new User();
-		// Fetch proper user
-		$U  ->where('id',$user_id)
-			->include_related('default_photo', '*', NULL, TRUE)
-			->get();
-			
-		
-		$this->data['active'] = ($U->status == 'disabled' ? FALSE : TRUE);
+		$Search = new User_search();
+		$Search->user_id = $user_id;
+		$U = $Search->get(array('user_id' => $user_id, 'include_photos' => TRUE));
 
-		
-		$U->default_location->get();
-			
-		if($U->default_location->exists())
-		{
-			//echo $U->default_location->city;
-		}
-		else
-		{
-			//echo "nope";
-		}
-		
-			
-		$U->default_photo->get();
-		
-		if($U->photo_source == 'facebook' && !empty($U->facebook_id))
-		{
-			$this->data['profile_thumb'] = "http://graph.facebook.com/".$U->facebook_id."/picture?type=square";
-		}
-		elseif($U->default_photo->exists())
-		{
-			$this->data['profile_thumb'] = base_url().$U->default_photo->thumb_url;
-		}
-		else
-		{
-			$this->data['profile_thumb'] = base_url()."assets/images/user.png";
-		}		
-		
-		$U->photos->get();
-		$show = ($U->photos->exists() ? true : false );
-		$this->data['show_gallery'] = json_encode($show);
-		$this->data['photos'] = NULL;
+		$U_model = new User($user_id);
 
-		foreach($U->photos->all as $val)
-		{
-			$data = array (
-					"id" => $val->id,
-					"caption" => $val->caption,
-					"url" => site_url().$val->url,
-					"thumb_url" => site_url().$val->thumb_url,
-					"default" => FALSE
-				);
-			$this->data['photos'][] = $data;
-		}
-		
+		$this->data['profile_thumb'] = $U->default_photo->url;
 
-
-		// New User_search object
-		$Search = new User_search;
-		$Search->user_id = $U->id;
-		
 		// Load user's gift
-		$this->load->library('Search/Good_search');
 		$G = new Good_search;
-		$this->data['gifts'] = $G->find( array("user_id" => $U->id, "count_transactions" => FALSE, "type"=>"gift"));
+		$this->data['gifts'] = $G->find( array(
+			"user_id" => $U->id, 
+			"type"=>"gift",
+			"status" => 'active'
+		
+		));
 		
 		// Load user's needs
-		$this->data['needs'] = $G->find( array("user_id" => $U->id, "count_transactions" => FALSE, "type"=>"need"));
+		$this->data['needs'] = $G->find( array(
+			"user_id" => $U->id, 
+			"type"=>"need",
+			"status" => 'active'	
+		));
 		
 		// Generate stats about the user
-		$U->stats();
-		
+		$U_model->stats();
+
 		// Load user's completed Transactions - to get reviews
 		$T_s = new Transaction_search();
 		$search_options = array(
 			"user_id" => $U->id,
 			"transaction_status" => "completed",
+			"limit" => 20
 			);
-		$this->data['transactions'] = $T_s->find($search_options);
-		
-		// define blank arrays
-		$this->data['giver'] = array();
-		$this->data['receiver'] = array();
-		
-		// Sort reviews by whether the user gave or recieved the gift
-		foreach ($this->data['transactions'] as $key=>$val)
-		{
-			if($val->decider->id == $U->id)
-			{
-				foreach($val->demands as $demand)
-				{
-						if($demand->type == 'take' || $demand->type == 'borrow')
-						{
-							$this->data['giver'][] = $this->data['transactions'][$key];
-							$this->data['gifts_given'][] = $demand->good;
-						}
-						elseif($demand->type == 'give' || $demand->type == 'share')
-						{
-							$this->data['receiver'][] = $this->data['transactions'][$key];
-							$this->data['gifts_received'][] = $demand->good;
-						}
-				}
-			}
-			if($val->demander->id == $U->id)
-			{
-				foreach($val->demands as $demand)
-				{
-						if($demand->type == 'take' || $demand->type == 'borrow')
-						{
-							$this->data['receiver'][] = $this->data['transactions'][$key];
-							$this->data['gifts_received'][] = $demand->good;
-						}
-						elseif($demand->type == 'give' || $demand->type == 'share')
-						{
-							$this->data['giver'][] = $this->data['transactions'][$key];
-							$this->data['gifts_given'][] = $demand->good;
-						}
-				}
-			}
-		}
+		$this->data['reviews'] = $T_s->find($search_options);
+
+		$T_y = new Thankyou_search();
+		$search_options_thank = array('recipient_id' => $U->id, 'status'=>'accepted');
+		$this->data['thanks'] = $T_y->find($search_options_thank);
+
 		//Load gifts for "Give to" panel
 		if(!empty($this->data['logged_in_user_id']))
 		{
-			$this->data['potential_gifts'] = $G->find( array("user_id" => $this->data['logged_in_user_id'], "type"=>"gift"));
-		}
-		else
-		{
-			unset($this->data['potential_gifts']);
+			$this->data['potential_gifts'] = $G->find( array("user_id" => $this->data['logged_in_user_id'], "type"=>"gift", 'status' => 'active'));
 		}
 		
 		// Get list of people this user is following
@@ -412,13 +253,12 @@ class People extends CI_Controller {
 			"user_id"=>$U->id
 		));
 		
-	
 		$this->data['visitor'] = TRUE;
 		
 		// If logged in, check to see if visitor is following this user
 		if(!empty($this->data['logged_in_user_id']))
 		{
-			$this->data['is_following'] = $U->is_followed_by($this->data['logged_in_user_id']);
+			$this->data['is_following'] = $U_model->is_followed_by($this->data['logged_in_user_id']);
 			
 			// Check to see if viewing your own profile (then you are NOT a 
 			// visitor, you're at home, looking in the mirror)
@@ -427,19 +267,23 @@ class People extends CI_Controller {
 		
 		//Check for "gift circle overlap"
 		if($this->data['visitor'] && !empty($this->data['userdata']['user_id']))
-		{			
+		{
 			$options = array(
 				'user_one' => $this->data['userdata']['user_id'],
 				'user_two' => $U->id
 				);
 			$this->data['gift_circle_overlap'] = $Search->gift_circle_overlap($options);
 		}
-		
+
+
 		// Send User object to the view
 		$this->data['u'] = $U;
 		$this->data['title'] = $U->screen_name." | Profile";
 		$this->data['rss'] = '<link rel="alternate" type="application/rss+xml" title="'.$U->screen_name.'\'s Latest Gifts" href="'.site_url('rss/user/'.$user_id).'">
 		<link rel="alternate" type="application/rss+xml" title="'.$U->screen_name.'\'s Latest Needs" href="'.site_url('rss/user/'.$user_id.'/needs').'">';
+
+		$this->data['thankform'] = $this->load->view('people/includes/thankform', $this->data, TRUE);
+		$this->data['messageform'] = $this->load->view('people/includes/messageform', $this->data, TRUE);
 		
 		// Load views
 		$this->load->view('header', $this->data);
@@ -453,6 +297,8 @@ class People extends CI_Controller {
 	*/
 	function follow( $user_id )
 	{
+		$this->auth->bouncer(1);
+
 		// Create User objects for both logged in user and user to follow
 		$U = new User($this->data['logged_in_user_id']);
 		$F = new User($user_id);
@@ -461,15 +307,12 @@ class People extends CI_Controller {
 		$U->save_following($F);
 		
 		// Prep hook data
-		$hook_data = array(
+		$event_data = array(
 			"following_user_id"=>$user_id,
 			"follower_user_id"=>$this->data['logged_in_user_id']
 		);
-		
-	
-		// Hooks follower and following!
-		$this->hooks->call('follower_new', $hook_data);
-		$this->hooks->call('following_new', $hook_data);
+
+		$this->event_logger->follower_new($event_data);
 
 		if( $this->data['is_ajax'] )
 		{
@@ -494,9 +337,6 @@ class People extends CI_Controller {
 		
 		// Delete "Following" relationship between 2 Users
 		$U->delete_following($F);
-		
-		// Hook: 'follower_deleted'
-		$this->hooks->call('follower_deleted', $this);
 
 		if( $this->data['is_ajax'] )
 		{
@@ -510,6 +350,7 @@ class People extends CI_Controller {
 		}
 	}
 
+
 	public function facebook()
 	{
 		if(!empty($this->U->facebook_id))
@@ -519,7 +360,6 @@ class People extends CI_Controller {
 			$friend_ids = $this->facebook->friend_ids($this->U->id);
 			
 			// Search for matching users
-			$this->load->library('Search/User_search');
 			$this->data['friends'] = $this->user_search->find(array(
 				"facebook_id"=>$friend_ids,
 				"following_stats"=>TRUE,
@@ -542,6 +382,11 @@ class People extends CI_Controller {
 		$this->load->view('footer', $this->data);
 	}
 	
+	/**
+	 * NON FUNCTIONAL 
+	 * Lists Gmail friends 
+	 * @todo rebuild integration with google
+	 */
 	public function gmail()
 	{
 		// Page Title
@@ -563,7 +408,6 @@ class People extends CI_Controller {
 				$email_list = $this->openauth->google_contacts_emails();
 				
 				// Search for matching users
-				$this->load->library('Search/User_search');
 				$this->data['friends']['google'] = $this->user_search->find(array(
 					"email"=>$email_list,
 					"following_stats"=>TRUE,
@@ -579,90 +423,58 @@ class People extends CI_Controller {
 		$this->load->view('footer', $this->data);
 	}
 	
-	function find()
+	/**
+	*  Handles incoming message form from profile 
+	*/
+	function message ()
 	{
-		if(!empty($this->data['userdata']['location']))
-		{
-			$this->data['location'] = $this->data['userdata']['location'];
-		}
-		else
-		{
-			$this->data['location'] = $this->geo->geocode_ip();
-		}
-		
-		if(!empty($_POST))
-		{
-			$options = array(
-				"keyword"=> $_POST['keyword']);
-			$this->data['results'] = $this->user_search->find($options);
-		}
-				
-		$this->data['title'] = "Find People";
-		$this->load->view('header', $this->data);
-		$this->data['menu'] = $this->load->view('people/includes/menu',$this->data, TRUE);
-		$this->load->view('people/find', $this->data);
-		$this->load->view('footer', $this->data);
 
-	}
-	function results()
-	{
-		//$this->load->library("search/user_search");
-		if(!empty($_POST))
-		{
-			$options = array(
-				"first_name" => $_POST['keyword'],
-				"screen_name"=> $_POST['keyword'],
-				"last_name" => $_POST['keyword'],
-				"location" => $this->data['userdata']['location']
+		if(!empty($_POST)) {
+			$input = $this->input->post();
+
+			$this->load->library('Messaging/Conversation');
+
+			$C = new Conversation();
+			$C->type ='thread';
+
+			$data = array(
+				'body' => $input['body'],
+				'user_id' => $this->data['logged_in_user_id'],
+				'subject' => $this->data['userdata']['screen_name']." wrote you a message.",
+				'recip_id' => $input['recip_id'],
+				'type' => 'thread'
 			);
-			
-			$this->data['results'] = $this->user_search->find($options);
-		}
-		
-		$this->data['title'] = "Search Results";
-		$this->load->view('header', $this->data);
-		$this->data['menu'] = $this->load->view('people/includes/menu',$this->data, TRUE);
-		$this->load->view('people/find', $this->data);
-		$this->load->view('footer', $this->data);
-	}
-	function _offer()
-	{
-		// Restrict access to logged in users
-		$this->auth->bouncer('1');
-		
-		if(empty($_POST['good_id']))
-		{
-			$this->session->set_flashdata('error', 'You forgot to select a gift!');
-			redirect('people/'.$_POST['decider_id']);
-		}
+			if(!$C->compose($data)){
+				show_error("Error saving Conversation");
+			}
 
- 		$this->load->library('market');
-				
-		// Arguments to send to Market::create_transaction()
-		$options = array(
-			"demands" => array(
-				array (
-					"user_id" => $this->data["logged_in_user_id"],
-					"good_id" => $_POST['good_id'],
-					"type" => $_POST['type'],
-					"hook" => 'hook',
-					"note" => $_POST['reason']
-				)
-			),
-			"decider_id" => $_POST['decider_id']
-		);
-		
-		
-		
-		// Make request
-		if(!$this->market->create_transaction($options))
+
+		$notify_data = new stdClass();
+
+		foreach($C->users as $val) 
 		{
-			// @todo handle request failure
-			return FALSE;
+			if($val->id != $this->data['logged_in_user_id'])
+			{
+				$notify_data->recipient_id = $val->id;
+				$notify_data->recipient_email = $val->email;
+				$notify_data->recipient = $val->screen_name;
+				$notify_data->notify_id = $val->id;
+			} 
 		}
-		// Set flashdata & redirect
-			$this->session->set_flashdata('success', 'Offer sent!');
-			redirect('people/'.$_POST['decider_id']);
 		
+		$Message = $C->get_latest_message();
+		$notify_data->sender_id = $this->data['logged_in_user_id'];
+		$notify_data->subject = $this->data['userdata']['screen_name']." wrote you a message.";
+		$notify_data->message = $input['body'];
+		$notify_data->message_id = $Message->id;
+		$notify_data->return_url = site_url('you/inbox');
+
+		$this->notify->alert_user_message($notify_data);
+		$this->event_logger->user_message($notify_data);
+			
+
+		}
 	}
+
 }
+

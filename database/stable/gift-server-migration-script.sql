@@ -548,6 +548,55 @@ ALTER TABLE ci_sessions CHANGE ip_address ip_address varchar(45) default '0' NOT
 ALTER TABLE ci_sessions MODIFY user_agent VARCHAR(120);
 
 
+-- -----------------------------------------------------
+-- v2.7 to 2.8
+-- 2012-06-21 to 2012-07-25
+-- Table `thankyous` added
+-- -----------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `thankyous` (
+  `id` int(100) NOT NULL AUTO_INCREMENT,
+  `thanker_id` int(10) NOT NULL,
+  `recipient_id` int(10) NOT NULL,
+  `gift_title` varchar(200) NOT NULL,
+  `body` varchar(2000) NOT NULL,
+  `status` enum('pending','accepted','declined') NOT NULL DEFAULT 'pending',
+  `created` datetime NOT NULL,
+  `updated` datetime NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB  DEFAULT CHARSET=utf8;
+
+-- Moved terms from the database to a config file
+-- 11/5/2012
+
+DROP TABLE IF EXISTS `terms` ;
+
+-- Removed unused table
+-- 11/5/2012
+
+DROP TABLE IF EXISTS `user_settings`;
+
+--Add column to thankyous table, enabling thanking of non-users
+ALTER table thankyous ADD COLUMN recipient_email VARCHAR(60) NULL AFTER recipient_id;
+
+--Sort categories into Goods/Services 
+-- 1/16/13
+INSERT INTO categories (name) VALUES ('Goods');
+INSERT INTO categories (name) VALUES ('Services');
+
+-- WARNING - you need to log into your database and get the ids of the Goods and Deeds
+-- Categories and add the id to the commands below
+--EXAMPE -- UPDATE categories SET parent_category_id = --INSERT parent_category_id here
+
+UPDATE categories SET parent_category_id = '19' WHERE id IN ('1','2','4','5','6','7','8','9','10','12','13','14','15','17');
+UPDATE categories SET parent_category_id = '20' WHERE id IN ('3','11','18');
+
+-- Revise transaction process
+-- Set all pending transactions to active and all declined to cancelled
+UPDATE transactions SET status = 'active' WHERE status ='pending' AND id > 0;
+UPDATE transactions SET status = 'cancelled' WHERE status = 'declined' AND id > 0;
+
+
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;

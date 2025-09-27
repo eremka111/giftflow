@@ -66,18 +66,19 @@ class Goods extends CI_Controller {
 
 		// Load external classes
 		$this->load->helper('elements');
-		$this->hooks =& load_class('Hooks');		
 		$this->load->library('Search/Good_search');
+		$this->load->library('Event_logger');
 	
 		
+		
+		$this->util->config();
+		$this->data = $this->util->parse_globals();
+
 		// Set some class-wide variables
 		$this->good_id = $this->uri->segment(2);
 		$this->method = $this->uri->segment(3);
 		$this->param = $this->uri->segment(4);
 		
-		$this->util->config();
-		$this->data = $this->util->parse_globals();
-
 	}
 	
 	/**
@@ -101,7 +102,7 @@ class Goods extends CI_Controller {
 	*/
 	function view()
 	{
-		
+		//User has requested the gift/offered to help with need
 		if(!empty($_POST))
 		{
 			if($_POST['method'] == "demand")
@@ -122,9 +123,35 @@ class Goods extends CI_Controller {
 				"include_photos"=>TRUE
 				));
 			
-			
-			Console::logSpeed('loading the gift...done.');
+			if(isset($this->G->title)) {
+				
+				Console::logSpeed('loading the gift...done.');
+
+
+				//Load matches for sidebar
+
+				$this->data['gifts'] = $Good_search->find(array(
+					'keyword' => $this->G->title,
+					'limit' => 5,
+					'type' => 'gift',
+					'exclude' => $this->good_id,
+					'status' => 'active'
+				));
+				$this->data['needs'] = $Good_search->find(array(
+					'keyword' => $this->G->title,
+					'limit' => 5,
+					'type' => 'need',
+					'exclude' => $this->good_id,
+					'status' => 'active'
+				));
+			} else {
+				$this->session->set_flashdata('error', 'Sorry an error occured');
+				redirect('find/gifts');
+			}
+		} else {
+			redirect('find/gifts');
 		}
+		
 		// Parse global data
 		
 		// Do a few things that can only be done if a good is found
@@ -133,9 +160,6 @@ class Goods extends CI_Controller {
 			// Extend Open Graph Tags data
 			$this->_extend_open_graph_tags();
 			
-			// Show AddThis sidebar
-			$this->data['addthis'] = TRUE;
-		
 			// Pass $this->G to view
 			$this->data['G'] = $this->G;
 		}
@@ -167,22 +191,24 @@ class Goods extends CI_Controller {
 		
 		if(!empty($_POST))
 		{
+			$post = $this->input->post();
 			// Create location object and then try to save it
-			$L = new Location();
+
 			$this->load->library('geo');
-			$Geo = new geo();
-			$full_location = $Geo->geocode($this->input->post('location'));
+			$Geo = new Geo();
+
+			$L = new Location();
 			
-			if(!$full_location)
+			$new_location = $Geo->geocode($post['location']);
+
+			if(empty($new_location))
 			{
-				$full_location = $Geo->geocode_ip();
+				$new_location = $Geo->geocode_ip();
 			}
-			
-			foreach($full_location as $key=>$val)
-			{
-					$L->$key = $val;
-			}
-			
+
+			foreach($new_location as $key=>$val)
+				$L->$key = $val;
+
 			$L->user_id = $this->data['logged_in_user_id'];
 			$L->validate();
 			if(!empty($L->duplicate_id))
@@ -191,25 +217,25 @@ class Goods extends CI_Controller {
 			}
 			elseif(!$L->save())
 			{
-					echo $L->error->string;
+				echo $L->error->string;
 			}
+			
 			
 			// Create Good object
 			$this->G = new Good();
-			$this->G->title = $this->input->post("title");
-			$this->G->category_id = $this->input->post("category");
-			$this->G->type = $this->input->post("type");
+			$this->G->title = $post["title"];
+			$this->G->category_id = $post["category"];
+			$this->G->type = $post["type"];
 			$this->G->save();
 			if(!empty($_POST['description']))
 			{
-				$this->G->description = $this->input->post('description');
+				$this->G->description = $post['description'];
 			}
 			
 			// If location and user successfully saved to good, save
 			// some more relationships
 			if ( $this->G->save( array( $L, $U ) ) )
 			{
-				
 				// Save location object to user and gift
 				$U->save_location($L);
 				$U->default_location->get();
@@ -219,23 +245,23 @@ class Goods extends CI_Controller {
 				}
 				
 				// Save tags
-				$tags = explode(",", $_POST['tags']);
+				$tags = explode(",", $post['tags']);
 				foreach ( $tags as $tag )
 				{
 					$this->G->add_tag( trim($tag) );
 				}
 				
 				// Hook: 'good_new'
-				$hook_data = array(
+				$event_data = array(
 					"good_id" => $this->G->id,
 					"user_id" => $U->id
 					);
-				$this->hooks->call('good_new', $hook_data);
-        
+				$this->event_logger->basic('good_new', $event_data);
+
 				// scan the watch list to see if anyone should get notified
 				
 				$this->load->model('watch');
-				$watches = $this->watch->match($U->id, $this->G->title, $this->G->description);
+				$watches = $this->watch->match($this->G, $L);
 				
 				$this->load->library('notify');
 				
@@ -243,23 +269,24 @@ class Goods extends CI_Controller {
 					$this->notify->alert_user_watch_match($thiswatch, $this->G);
 				}
 
-				// Set flashdata
-				$flash = ($this->G->type == 'gift') ? 'Gift Saved!' : 'Need Saved!';
-				$this->session->set_flashdata('success',$flash);			
 			}
 			else
 			{
 				$this->data['alert_error'] = $this->G->error->all;
 			}
-			$where = ($this->G->type == 'gift') ? 'you/gifts' : 'you/needs';
+			$where = 'you/list_goods/?type='.$this->G->type.'&id='.$this->G->id;
+
 			redirect($where);
 		}
 		show_error("Good didn't save properly.");
 		return FALSE;
 	}
-  
+
+	
 	/**
-	*	Main "View Gift" or "View Need" page
+	 *	Main "View Gift" or "View Need" page
+	 *
+	 *	Demand types in use are give and take
 	*/
 	function _view()
 	{
@@ -272,84 +299,69 @@ class Goods extends CI_Controller {
 		// Is this the good's owner? And is it a gift?
 		$this->data['is_owner'] = $this->_restrict(FALSE);
 		$this->data['is_gift'] = ($this->G->type=="gift");
+
+		$this->data['demand'] = ($this->data['is_gift']) ? 'take' : 'give';
+		$this->data['demand_text'] = ($this->data['is_gift']) ? 'Request this Gift' : 'Offer to help';
 		
 		// Set default value of requested flag, will be updated below
 		$this->data['requested'] = FALSE;
-		
-		if(!empty($this->data['logged_in_user_id']))
-		{
-			// Set user_id to pass to transactions search function
-			// For non-owners, results are filtered by user
-			$user_id = ($this->_restrict(FALSE)) ? NULL : $this->data['logged_in_user_id'];
 
-			// Search for transactions
-			$G = new Good_search;
-			$G->good_id = $this->good_id;
-			$this->data['transactions'] = array(
-				"pending" => $G->pending_transactions($user_id),
-				"active" => $G->active_transactions($user_id),
-				"completed" => $G->completed_transactions($user_id),
-				"declined" => $G->declined_transactions($user_id),
-				"cancelled" => $G->cancelled_transactions($user_id)
-			);
-			
-			// For non-owners, set $requested flag to true if user
-			// has already requested at least once
-			if(!$this->_restrict(FALSE))
-			{
-				foreach($this->data['transactions'] as $val)
-				{
-					if(count($val)>0)
-					{
-						$this->data['requested'] = TRUE;
-						break;
-					}
-				}
-			}
-		}
-		
-		
-		//load all photos of Good
-		$this->load->library('datamapper');
-		$G_dmz = new Good();
-		$G_dmz->get_where(array('id' => $this->G->id)); 
-		$G_dmz->photos->get();
-		
-		//Load photos
-		foreach($G_dmz->photos->all as $pho)
+		// Search for transactions
+		$G = new Good_search;
+
+		$other_goods = '';
+		//Load matches for sidebar
+		if($this->data['is_owner'])
 		{
-			$data = array (
-				"id" => $pho->id,
-				"caption" => $pho->caption,
-				"url" => site_url().$pho->url,
-				"thumb_url" => site_url().$pho->thumb_url,
-				"default" => FALSE
-			);
-			$photos[] = $data;
-		}
-		if(!empty($photos)) 
-		{
-			$this->data['photos'] = json_encode($photos);
-		}
-		else
-		{
-			$this->data['photos'] = NULL;
+			$other_goods = ($this->data['is_gift'])? 'need' :'gift';
+		} else {
+			$other_goods = ($this->data['is_gift'])? 'gift' : 'need';
 		}
 
-			
-				
+		$this->data['other_goods'] = $G->find(array(
+			'keyword' => $this->G->title,
+			'limit' => 5,
+			'type' => $other_goods,
+			'exclude' => $this->good_id,
+			'status' => 'active'
+		));
+		
+		//load goods even if there are no keyword matches
+		if(empty($this->data['other_goods']))
+		{
+			$this->data['other_goods'] = $G->find(array(
+				'limit' => 5,
+				'type' => $other_goods,
+				'exclude' => $this->good_id,
+				'status' => 'active'
+			));
+		}
+		$this->data['othergoods_type'] = ucfirst($other_goods).'s';
+
+		//Button for visitors
+		$button_text = 'Sign up or Login to ';
+		if($this->G->type == 'need') {
+			$button_text .= "offer to help";
+		} else {
+			$button_text .= "request this gift"; 
+		}
+		
+		$this->data['button_text'] = $button_text;
+
 		// Title
 		$this->data['title'] = $this->G->title." | A ".ucfirst($this->G->type)." from ".$this->G->user->screen_name;
 		
 		// Breadcrumbs
 		$this->data['breadcrumbs'][] = array(
 			"title"=>ucfirst($this->G->type)."s", 
-			"href"=>site_url($this->G->type."s")
+			"href"=>site_url("find/".$this->G->type."s")
 		);
 		
 		$this->data['breadcrumbs'][] = array (
 			"title"=>$this->G->title
 		);
+
+		$this->data['demand_form'] = $this->load->view('goods/demand_form', $this->data, TRUE);
 		
 		// Load views
 		$this->load->view('header', $this->data);
@@ -370,23 +382,50 @@ class Goods extends CI_Controller {
 		// Display editing form
 
 		Console::logSpeed('Load edit gift view...');
-					
+		
+		// Load User
 		$this->load->library('datamapper');
 		$this->data['U'] = new User($this->session->userdata('user_id'));
 		$this->data['U']->location->get();
-
-		// Title
-		$this->data['title'] = $this->G->title." | A ".ucfirst($this->G->type)." from ".$this->G->user->screen_name;
 		
+		//load datamapper object of Good
+		$G_dmz = new Good();
+		$G_dmz->get_where(array('id' => $this->G->id)); 
+		$G_dmz->default_photo->get();
+		$G_dmz->photos->get();
+		
+		// Add category image to the photos array
+		$this->data['photos'][] = (object) array(
+			"id"=>NULL,
+			"caption"=>"Category Icon",
+			"url"=> base_url("assets/images/categories/".$this->G->category->id.".png"),
+			"thumb_url"=> base_url("assets/images/categories/".$this->G->category->id.".png"),
+			"default"=>($G_dmz->default_photo->id==NULL)
+		);
+			
+		// add other images to the photos array
+		foreach($G_dmz->photos->all as $pho)
+		{
+			$data = (object) array (
+				"id" => $pho->id,
+				"caption" => $pho->caption,
+				"url" => base_url($pho->url),
+				"thumb_url" => base_url($pho->thumb_url),
+				"default" => ($G_dmz->default_photo->id == $pho->id)
+			);
+			
+			$this->data['photos'][] = $data;
+		}
+		
+		// Tells view to display editing mode, not adding mode
+		$this->data['add'] = FALSE;
+		
+		// Load categories
 		$this->data['categories'] = $this->db->order_by("name","ASC")
 			->get("categories")
 			->result();
 		
-		// Breadcrumbs
-		$this->data['breadcrumbs'][] = array(
-			"title"=>ucfirst($this->G->type)."s", 
-			"href"=>site_url($this->G->type."s")
-		);
+		$this->data['default_location'] = $this->data['userdata']['location']->address;
 		
 		$this->data['breadcrumbs'][] = array (
 			"title"=>$this->G->title,
@@ -396,18 +435,31 @@ class Goods extends CI_Controller {
 			"title"=>"Edit"
 		);
 		
+		// Load Menu
+		$this->data['menu'] = $this->load->view('you/includes/menu',$this->data, TRUE);
+		$this->data['js'][] = 'jquery-validate.php';
+		$this->data['js'][] = 'GF.Tags.js';
+		
 		// Load views
-		$this->load->view('header', $this->data);
-		$this->load->view('goods/edit', $this->data);
-		$this->load->view("footer", $this->data);
-
+		if($this->data['is_ajax'])
+		{
+			$this->load->view('you/includes/add_good_form', $this->data);
+		}
+		else
+		{
+			$this->data['form'] = $this->load->view('you/includes/add_good_form',$this->data,TRUE);
+			$this->load->view('header', $this->data);
+			$this->load->view('you/includes/header',$this->data);
+			$this->load->view('you/add_good', $this->data);
+			$this->load->view('footer', $this->data);
+		}
 	}
 	
 	/**
 	* User uploads a photo of the good
 	*
 	*/
-	function _photo_add()
+	function _photos()
 	{
 		      
 		$this->auth->bouncer(1);
@@ -418,7 +470,30 @@ class Goods extends CI_Controller {
 		$G_dmz->get_where(array('id' => $this->G->id)); 
 		$G_dmz->default_photo->get();
 		$G_dmz->photos->get();
+
+		// Add category image to the photos array
+		$this->data['photos'][] = (object) array(
+			"id"=>NULL,
+			"caption"=>"Category Icon",
+			"url"=> base_url("assets/images/categories/".$this->G->category->id.".png"),
+			"thumb_url"=> base_url("assets/images/categories/".$this->G->category->id.".png"),
+			"default"=>($G_dmz->default_photo==NULL || $G_dmz->default_photo->id==NULL)
+		);
+					
+		// Add other images to the photos array
+		foreach($G_dmz->photos->all as $pho)
+		{
+			$data = (object) array (
+				"id" => $pho->id,
+				"caption" => $pho->caption,
+				"url" => base_url($pho->url),
+				"thumb_url" => base_url($pho->thumb_url),
+				"default" => ($G_dmz->default_photo->id == $pho->id)
+			);
 			
+			$this->data['photos'][] = $data;
+		}
+
 			
 		//Save Photo
 			if(!empty($_FILES))
@@ -435,7 +510,7 @@ class Goods extends CI_Controller {
 				{					
 					$error = $this->upload->display_errors();
 					$this->session->set_flashdata('success', $error);
-					redirect($this->G->type.'s/'.$this->G->id."/photo_add");
+					redirect($this->G->type.'s/'.$this->G->id."/photos");
 				}
 				$data = $this->upload->data();
 				
@@ -463,53 +538,24 @@ class Goods extends CI_Controller {
 				if(!$G_dmz->save($this->P))
 				{
 					$this->session->set_flashdata('error', $G_dmz->error->string);
-					redirect($this->G->type.'s/'.$this->G->id."/photo_add");
+					redirect($this->G->type.'s/'.$this->G->id."/photos");
 				}
 				
-				redirect($this->G->type.'s/'.$this->G->id."/photo_add");
-			}
-			
-			
-		foreach($G_dmz->photos->all as $pho)
-		{
-			$data = array (
-				"id" => $pho->id,
-				"caption" => $pho->caption,
-				"url" => site_url().$pho->url,
-				"thumb_url" => site_url().$pho->thumb_url,
-				"default" => FALSE
-			);
-		
-			// if($G_dmz->default_photo->id == $pho->id)
-// 			{
-// 				$data['default'] = TRUE;
-// 			}
-			$this->data['photos'][] = $data;
-			
-		}
-		
+				redirect($this->G->type.'s/'.$this->G->id."/photos");
+			}		
 				
 		$this->data['G'] = $this->G;
+		
 		// Title
-		$this->data['title'] = "Upload a Photo for ".$this->G->title;
+		$this->data['title'] = "Manage Photos | ".$this->G->title;
 		
-		// Breadcrumbs
-		$this->data['breadcrumbs'][] = array(
-			"title"=>ucfirst($this->G->type)."s", 
-			"href"=>site_url($this->G->type."s")
-		);
-		
-		$this->data['breadcrumbs'][] = array (
-			"title"=>$this->G->title,
-			"href"=>site_url($this->G->type."s/".$this->G->id)
-		);
-		$this->data['breadcrumbs'][] = array(
-			"title"=>"Upload a Photo"
-		);
+		// Load Menu
+		$this->data['menu'] = $this->load->view('you/includes/menu',$this->data, TRUE);
 		
 		// Load views
 		$this->load->view('header', $this->data);
-		$this->load->view('goods/add_photo', $this->data);
+		$this->load->view('you/includes/header',$this->data);
+		$this->load->view('goods/photos', $this->data);
 		$this->load->view("footer", $this->data);	
 	
 	}
@@ -532,7 +578,7 @@ class Goods extends CI_Controller {
 		$P->delete();
 		$G->delete($P);
 		
-		redirect($G->type.'s/'.$G->id.'/photo_add');
+		redirect($G->type.'s/'.$G->id.'/photos');
 	
 	}
 	
@@ -547,8 +593,6 @@ class Goods extends CI_Controller {
 		$this->load->library('datamapper');
 		$G = new Good;
 		$P = new Photo;
-		$P_d = new Photo;
-		
 		
 		$G->where('id', $this->good_id)->get();
 		$P->where('id', $this->param)->get();
@@ -559,46 +603,48 @@ class Goods extends CI_Controller {
 		
 		$G->save_default_photo($P);
 		
-		redirect($G->type.'s/'.$G->id.'/photo_add');
+		redirect($G->type.'s/'.$G->id.'/photos');
 		
 	
 	}
 	
 	/**
 	*	User makes a demand
+	*	Important note - 'type' here denotes the type of demand (give/take) 
+	*	NOT the type of good (gift/need)
 	*/
 	function _demand()
 	{
-		// Restrict access to logged in users
-		$this->auth->bouncer('1');
+		$input = $this->input->post();
+		$this->auth->bouncer(1);
 		
 		$this->load->library('market');
 		
-		$this->good_id = $_POST['good_id'];
+		$this->good_id = $input['good_id'];
 				
 		// Arguments to send to Market::create_transaction()
 		$options = array(
 			"demands" => array(
 				array (
 					"user_id" => $this->data["logged_in_user_id"],
-					"good_id" => $_POST['good_id'],
-					"type" => $_POST['type'],
-					"hook" => 'hook',
-					"note" => $_POST['note']
+					"good_id" => $input['good_id'],
+					"type" => $input['type'],
+					"note" => $input['note']
 				)
 			),
-			"decider_id" => $_POST['decider_id']
+			"decider_id" => $input['decider_id'],
+			'hook' => 'transaction_new'
 		);
 		
-		// Make request
-		if(!$this->market->create_transaction($options))
+		// Make request, function returns the transaction id
+		if($this->market->create_transaction($options) == 0 )
 		{
 			// @todo handle request failure
 			return FALSE;
 		}
 		
 		
-		$type = $_POST['type'];
+		$type = $input['type'];
 		
 		// Set flashdata & redirect
 		if($type =='give') 
@@ -673,6 +719,12 @@ class Goods extends CI_Controller {
 		if(!empty($_POST['tags']))
 		{
 			$New_Tags = explode(",", $_POST['tags']);
+
+			// Trim tags
+			foreach($New_Tags as $key=>$val){
+				$New_Tags[$key] = trim($val);
+			}
+			
 			// Load and delete existing tags
 			$Old_Tags = $this->G->tag->get();
 			foreach($Old_Tags->all as $Old_Tag)
@@ -694,12 +746,12 @@ class Goods extends CI_Controller {
 		// Save relationship to User
 		$U->save_good($this->G);
 		
-		// Hook: 'good_edited'
-		$hook_data = array(
+		$event_data = array(
 			"good_id" => $this->G->id,
 			"user_id" => $U->id
 			);
-		$this->hooks->call('good_edited', $hook_data);
+
+		$this->event_logger->basic('good_edited', $event_data);
 
 		// Set flashdata
 		$this->session->set_flashdata('success','Changes saved successfully.');
@@ -744,11 +796,9 @@ class Goods extends CI_Controller {
 			}
 			else
 			{
-				$this->session->set_flashdata('success', $this->G->title." was deleted successfully."); 
-				// Hook: 'good_deleted'
-				//$this->hooks->call('good_deleted', $this);
+				$this->session->set_flashdata('success', $this->G->title." was disabled successfully."); 
 				
-				redirect("you/".$this->G->type."s");
+				redirect("you/list_goods/".$this->G->type);
 			}
 			
 		}
@@ -793,18 +843,32 @@ class Goods extends CI_Controller {
 	*/
 	function _extend_open_graph_tags()
 	{
-		@$extension = array(
-			'og:image' => $this->G->default_photo->thumb_url,
-			'og:title' => $this->G->title,
+
+		//set image url. Because we use sprites for category images, we have to provide a specific url
+		//I decided to leave out categories here and just provide a generic gift image, slightly larger because fbook wants a 200px wide image
+
+		$image_url = (isset($this->G->default_photo->url))? $this->G->default_photo->url : site_url('assets/images/fbookGift.png');
+
+		$extension = array(
+			'og:image' => $image_url,
+			'og:title' => "My latest ".ucfirst($this->G->type)." on GiftFlow:  ".$this->G->title,
+			'og:description' => $this->G->description,
 			'og:type' => "product",
-			'og:latitude' => $this->G->location->latitude,
-			'og:longitude' => $this->G->location->longitude,
-			'og:street-address' => $this->G->location->street_address,
-			'og:locality' => $this->G->location->city,
-			'og:region' => $this->G->location->state,
-			'og:postal-code' => $this->G->location->postal_code,
-			'og:country-name' => $this->G->location->country
 		);
 		$this->data['open_graph_tags'] = array_merge($this->data['open_graph_tags'], $extension);
+	}
+
+	/**
+	 * Routes a visitors click to a login page
+	 * Sets login redirect to send them back to the gift/need they were viewing
+	 *
+	 */
+	function visitor_request($type, $id) 
+	{
+		$type = $type .= 's';
+		$redirect = site_url().$type.'/'.$id;
+		//not to be confused with dropdown_login_redirect set in parse::globals
+		$this->session->set_userdata('visitor_redirect_url', $redirect);
+		redirect('login');
 	}
 }

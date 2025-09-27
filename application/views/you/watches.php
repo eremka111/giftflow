@@ -1,32 +1,34 @@
-<div id="your_watches" class="two_panels">
-
-	<!-- Sidebar Menu -->
-	<?php echo $menu; ?>
+<div class='row'>
+	<div class='span2 chunk'>
+		<!-- Sidebar Menu -->
+		<?php echo $menu; ?>
+	</div>
 	
 	
-	<div class='right_content'>
-		<h3>Watch a Keyword</h3>
+	<div class='span9 chunk'>
+		<h3 class='dash_title'>Watch a Keyword</h3>
+		<p>Choose words or phrases to save as 'watches'.</p>
 
 		<?php echo $form; ?>
 		
-		<h3>Keywords you are currently watching</h3>
+		<p> Whenever another user posts a gift that matches one of your watch keywords you will receive an automatic email. </p> 
 		
-		<?php if(!empty($watches)) { ?>
-			<ul class ="transactions goods_list list_menu float_right">
-				<?php 
+			<ul class='interaction'>
+				<li class='section_header'>
+					<h3 class='inbox_title'>Currently Watching</h3>
+				</li>
+				<?php if(!empty($watches)) { 
 					foreach($watches as $val) 
 					{ ?>
-					
-							<li class="clearfix">
+						<li class='watch'>
+						
+						  <a class="btn btn-mini delete_watch" href="<?php echo site_url('watches/'.$val->id.'/delete'); ?>" title='click to delete'>
+							<i class="icon-trash"></i>
+						  </a>
 							
-							<!-- Options Dropdown Menu -->
-							  <a class="css_right btn btn-large delete_watch" href="<?php echo site_url('watches/'.$val->id.'/delete'); ?>">
-								<i class="icon-trash"></i>
-							  </a>
-								
-							<div class="metadata left">
+							<a class='keyword' title='Click to Search' href='<?php echo site_url("find/gifts/".$val->keyword); ?>'>
 								<?php echo $val->keyword; ?>
-							</div>
+							</a>
 								
 						</li>
 				<?php } ?>
@@ -40,18 +42,13 @@
 		<?php } ?>
 		
 	</div>
-	<!-- eof div.right_content -->
 	
-
 </div>
-<!-- eof div.two_panels -->
 
 <script type='text/javascript'>
 $(function(){
 
-	$(".delete_watch").click(function(){
-		return confirm('Are you sure you want to delete this watch?');
-	});
-	
+$('.delete_watch').tooltip();
+
 });
 </script>

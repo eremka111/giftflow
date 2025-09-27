@@ -1,112 +1,114 @@
-<div id="your_transactions" class="two_panels">
-
-	<!-- Sidebar Menu -->
-	<?php echo $menu; ?>
-	
-	<div class='right_content'>
-		<a href="<?php echo site_url('you/add_good/?type='.$type);?>" id='add_good' class="button btn">Add a <?php echo ucfirst($type); ?></a>
-		<?php if(!empty($goods)) { ?>
-			<ul class ="transactions goods_list list_menu float_right">
+<div class='row'>
+	<div class='span2 chunk'>
+		<!-- Sidebar Menu -->
+		<?php echo $menu; ?>
+	</div>
+	<div class='span9 chunk'>
+<!--		<a href="<?php echo site_url('you/add_good/'.$type);?>" id='add_good' class="btn btn-large btn-success">Add a <?php echo ucfirst($type); ?></a> -->
+		<ul class ="results_list dash_goods">
+			<?php if(!empty($goods)) { ?>
 				<?php foreach($goods as $val) { ?>
-					<?php 
-						if($val->status !='disabled')
-						{?>
-							<li class="clearfix">
-							
-								<!-- Options Dropdown Menu -->
-								<div class="btn-group css_right">
-								  <button class="btn btn-large dropdown-toggle" data-toggle="dropdown">
-								  	<i class="icon-cog"></i>
-								  	<span class="caret"></span>
-								  </button>
-								 
-								  <ul class="dropdown-menu">
-								  	<li><a href="<?php echo site_url($val->type.'s/'.$val->id.'/edit');?>">Edit</a></li>
-									<li><a href="<?php echo site_url($val->type.'s/'.$val->id.'/photo_add');?>">Add Photo</a></li>
-									<li class="divider"></li>
-									<li><a href="<?php echo site_url('gifts/'.$val->id.'/disable'); ?>">Delete</a></li>
-								  </ul>
-								</div>
-								<!-- eof Options Dropdown Menu -->
-								
-								<a href="#" class="user_image medium left">
-									<img class='thumb_image' src="<?php if(isset($val->photo->thumb_url)) { echo $val->photo->thumb_url; } else { echo $val->default_photo->url; }?>" />		
+						<li class='clearfix'>
+						<div class='row-fluid'>
+							<div class='span2'>	
+									<?php if(!isset($val->default_photo->thumb_url)) { ?>	
+										<a href='#' class="result_image <?php echo $val->default_photo->thumb_class; ?>">
+										</a>
+									<?php } else { ?>
+										<a href="<?php echo site_url($type.'s/'.$val->id);?>" class="result_image" title="<?php echo $val->title;?>">
+										<img src="<?php echo $val->default_photo->thumb_url; ?>"/>
+										</a>
+									<?php }?>
 								</a>
-								
-								<div class="metadata left">
-									<a href="<?php echo site_url($val->type.'s/'.$val->id);?>" class="title">
-									 <?php echo $val->title; ?>
-									</a>
-									<span class="summary">
-									<?php echo substr($val->description, 0, 100); ?>
-									</span>
-								</div>
-								
-								<!--<span class="status left">
-									<?php echo $val->status; ?>
-								</span>-->
-								
-								<span class="updated css_right">
-									<?php echo user_date($val->created,"n/j/o");?>
+							</div>
+				
+							<div class="span4 metadata">
+								<a href="<?php echo site_url($val->type.'s/'.$val->id);?>" class="title">
+								 <?php echo $val->title; ?>
+								</a>
+								<span class="summary">
+								<?php echo substr($val->description, 0, 100); ?>
 								</span>
-                <div class='addthis'></div>
-						</li>
-						
-						
-						
+							</div>
+							
+							<!-- Options Dropdown Menu -->
+							<div class="span6 btn-group good_buttons">
+								<a href="http://api.addthis.com/oexchange/0.8/forward/facebook/offer?url=http://giftflow.org/gifts/<?php echo $val->id; ?>" class='btn shareBtn' title='on Facebook'>Share</a>
+								<a href="<?php echo site_url($val->type.'s/'.$val->id.'/edit'); ?>" class='btn'>Edit</a>
+								<a href="<?php echo site_url($val->type.'s/'.$val->id.'/photos'); ?>" class='btn'>Add Photos</a>
+								<a href="<?php echo site_url('gifts/'.$val->id.'/disable');?>" class='btn'>Delete</a>
 
-					<?php } ?>
-				<?php } ?>
-				</ul>
+							</div>
+							<!-- eof Options Dropdown Menu -->
+						</div>
+							
+					</li>
+
+			<?php } ?>
 		<?php } else { ?>
 		
 			<!-- Empty State -->
-			<p>
+			<li>
 				No <?php echo $type.'s'; ?> found.
-			</p>
+			</li>
 		<?php } ?>
-		
+		</ul>
 	</div>
-	<!-- eof div.right_content -->
-	
-	<div class='add jqmWindow' id='add_good'></div>
-
 </div>
-<!-- eof div.two_panels -->
+
+	<div class='modal hide fade' id='shareModal'>
+		<div class='modal-header'>
+			<button type='button' class='close' data-dismiss='modal' aria-hidden='true'>x</button>
+			<h3 style ='text-align:center;'>Congratulations! Your <?php echo ucfirst($type);?> has been added.</h3>
+		</div>
+		<div class='modal-body row-fluid spreadWord'>
+			
+			<div class='span1'>
+			</div>
+			<div class="span10 addthis_toolbox addthis_default_style addthis_32x32_style" addthis:url="<?php echo site_url($type.'s/'.$shareId);?>">
+				<p class='nicebigtext'>Broadcast your <?php echo ucfirst($type); ?> to your friends.</p>
+					<div class='thisadd_buttons'>
+						<a class="addthis_button_preferred_1"></a>
+						<a class="addthis_button_preferred_2"></a>
+						<a class="addthis_button_preferred_3"></a>
+						<a class="addthis_button_preferred_4"></a>
+						<a href="http://www.addthis.com/bookmark.php?v=250&pubid=giftflow" class="addthis_button_compact"></a>
+					</div>
+				</div>
+			<div class='span1'>
+			</div>
+		</div>
+		<div class='modal-footer'>
+			<a href="<?php echo site_url($type.'s/'.$shareId.'/photos'); ?>" class='btn pull-left'>Add Photos</a>
+			<a href='#' data-dismiss='modal' class='btn'>Close</a>
+		</div>
+	</div>
+
 
 <script type='text/javascript'>
 $(function(){
-  jQuery.fn.stripTags = function() { 
-    return this.replaceWith( this.html().replace(/<\/?[^>]+>/gi, '') ); 
-  };
 
-	$("img.status_icon").tipTip({ delay: 0, fadein: 0 });
+	if(<?php echo $promptShare; ?>)
+	{
+		$('#shareModal').modal({
+			'toggle': 'true',
+			'backdrop': 'static'
+		});
+
+		$('.thisadd_buttons a').click(function() {
+			_gaq.push(['_trackEvent', 'shareModal','shareClick']);
+			console.log('hello!');
+		});
+	}
+
+
+	$("img.status_icon").tooltip({ delay: 0, fadein: 0 });
+
+	$('.shareBtn').tooltip({ delay: 0, fadein: 0 });
 	
 	$("#delete_gift").click(function(){
 		return confirm('Are you sure you want to delete this gift? Doing so will cancel all transactions involving this gift');
 	});
-	
-  //Renders unique addthis buttons for every row!
-  var goods =  $('.goods_list').children('li.clearfix');
-  $.each(goods, function(foo, bar){
-    myurl  = $(bar).find('a.title').attr('href');
-    mytitle = $(bar).find('a.title').text();
-    mydescription = $(bar).find('span.summary').text();
-    myimage = $(bar).find('img.thumb_image').attr('src');
-
-
-    var addcon = {
-      pubid: 'giftflow'
-    };
-
-    var addshare = {
-        url: $.trim(myurl),
-        title: $.trim(mytitle),
-        description: $.trim(mydescription)+'...',
-        image: $.trim(myimage)
-    };
-
-  });
 
 });
 </script>

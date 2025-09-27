@@ -24,6 +24,7 @@ class Good_search extends Search
 	{
 		parent::__construct();
 		$this->CI =& get_instance();
+		$this->CI->load->library('Factory/Good_factory');
 	}
 	
 	/**
@@ -53,22 +54,25 @@ class Good_search extends Search
 			"include_tags"=>FALSE,
 			"include_photos"=>FALSE,
 			"count_transactions"=>FALSE,
-			"radius"=>300,
+			"radius"=>NULL,
 			"user_id"=>NULL,
 			"id_search"=>FALSE,
-			"keyword"=>""
+			"keyword"=>"",
+			"exclude" => NULL,
+			'status' => 'active'
 		);
 		
 		$default_like_options = array(
 			"title"=>NULL,
 			"description"=>NULL,
 		);
+
 		$options = (object) array_merge(
 			$default_like_options, 
 			$default_options, 
 			$options
 		);	
-		
+
 		// If keyword option set, reroute to find_by_keyword()
 		if(!empty($options->keyword))
 		{
@@ -117,6 +121,10 @@ class Good_search extends Search
 			{
 				$this->CI->db->where_in('G.id',$options->good_id);
 			}
+			if(!empty($options->exclude))
+			{
+				$this->CI->db->where('G.id !=', $options->exclude);
+			}
 			
 			// Set WHERE G.type clause, TYPE IS SINGULAR (Gift,Need)
 			if(!empty($options->type))
@@ -131,16 +139,17 @@ class Good_search extends Search
 			// Filter by status
 			if(!empty($options->status))
 			{
-				$this->CI->db->where("G.status",$options->status);
+				$this->CI->db->where_in("G.status",$options->status);
 			}
 			
-
 			// Filter by category_id
 			if(!empty($options->category_id))
 			{
 				$this->CI->db->where_in("G.category_id",$options->category_id);
 			}
-			if((!empty($options->location->latitude) || !empty($options->location->longitude) || !empty($options->location->address))||!empty($options->location))
+		
+
+			if(!empty($options->location->city) || !empty($options->location->latitude) || !empty($options->location->address) || !empty($options->location->state))
 			{
 				// If running full search, include all location-related fields
 				// in the select clause
@@ -163,20 +172,18 @@ class Good_search extends Search
 						$this->CI->db->join("locations AS L ","G.location_id = L.id");
 					}
 				}
+				$this->geosearch_query($options);
 				
 			}
 			// Else simply include location for those who have it
 			else
 			{
+				$options->order_by = 'G.created';
 				$this->_join_locations("left");
 			}
 			
-			if(!empty($options->location))
-				{
-					$this->_geosearch_clauses($options->location);
-				}
-			$this->CI->db->order_by($options->order_by, $options->sort);
 
+			$this->CI->db->order_by($options->order_by, $options->sort);
 			
 			// Execute query
 			Console::logSpeed("Good_search::find(): executing...");
@@ -184,10 +191,6 @@ class Good_search extends Search
 			// Get full results
 			if(!$options->id_search)
 			{	
-				// Set ORDER BY
-				
-				// Set LIMIT
-				$this->CI->db->limit($options->limit, $options->offset);
 
 				$result = $this->CI->db->get()->result();
 				// Hydrate & return results
@@ -209,19 +212,16 @@ class Good_search extends Search
 						$result[$key]->transaction_count = count($Transactions);
 					}
 				}
+
+				$factory = new Good_factory();
+				return $factory->build_goods($options, $result);
 				
-				$raw_result = Factory::good($result);
-				return $raw_result;
-				
-			}
+			} else {
 			
 			// Get simple ID search results
-			else
-			{
 				$this->CI->db->limit($options->limit, $options->offset);
 				$result = $this->CI->db->get()->result_array();
 				$good_ids = array_map( function($good){ return $good['id']; }, $result);
-
 				return $good_ids;
 			}
 		}
@@ -255,31 +255,31 @@ class Good_search extends Search
 			"order_by"=>"created", // or "distance"
 			"sort"=>"ASC",
 			"offset"=>0,
-			"limit"=>100
+			"limit"=>100,
+			'radius' => 60
 		);
 		$options = (object) array_merge($default_options, $options);
+		$keywords = explode(' ', $options->keyword);
 		
 		// Find matching Tag IDs if search keyword 3 characters long or more
 		// @todo move to Tag_search library
-		if(strlen($options->keyword)>2)
+		if(strlen($keywords[0]) > 2)
 		{
 			Console::logSpeed('Good_search::find_by_keyword(): finding matching tags.');
 			
 			// Load first 25 matches, extract their IDs
-			$tags = $this->CI->db->select("id")
-				->from("tags")
-				->like("name",$options->keyword)
-				->limit(100)
+			$this->CI->db->select("id")
+				->from("tags");
+				foreach($keywords as $word) {
+					$this->CI->db->or_like("name",$this->CI->db->escape_like_str($word));
+				}
+			$tags = $this->CI->db->limit(100)
 				->get()
 				->result_array();
 			// @todo move to get_ids() utility function
 			$tag_ids = array_map( function($tag){ return $tag['id']; }, $tags);
 		}
-		
-		// Process location data one time only
-		$this->CI->load->library('geo');
-		$options->location = $this->CI->geo->process($options->location);
-
+	
 		$queries = array(
 			"keyword"=>"",
 			"tag"=>""
@@ -293,11 +293,26 @@ class Good_search extends Search
 			// building tag queries if no matches were found.
 			if($query_type=="keyword")
 			{
-				//Notice the extra bracket added before G.title - used to group the like or_like clauses 
-				$this->CI->db->where(sprintf("( G.title LIKE '%s' OR 
-												G.description LIKE '%s')",
-												$options->keyword,
-												$options->keyword));
+				$keywords = explode(' ',$options->keyword);
+				$likewhere = '(';
+				$i = 0;
+				$len = count($keywords);
+				foreach($keywords as $word) {
+					$i++;
+					$word = $this->CI->db->escape_like_str($word);
+					$word = "'%".$word."%'";
+
+
+					$likewhere .= "G.title LIKE ".$word.
+									" OR G.description LIKE ".$word." ";
+
+					if($i != $len){
+						$likewhere.= ' OR ';
+					}
+				}
+				$likewhere .= ")";
+
+				$this->CI->db->where($likewhere);
 			}
 			elseif($query_type=="tag")
 			{
@@ -324,22 +339,12 @@ class Good_search extends Search
 			{
 				$this->CI->db->where("G.category_id",$options->category_id);
 			}
-			
-		//	if(!empty($options->location->bounds))
-		//	{
-		//		$this->CI->db->join("locations AS L ","G.location_id = L.id");
-		//		$this->_geosearch_clauses($options->location);
-		//	}
-			
-			// NB! get_compiled_select() manually added to end of core active 
-			// record  library. The source code was taken directly from the 
-			// codeigniter development branch
-			
+	
 			$queries[$query_type] = $this->CI->db->get_compiled_select();
 		}
 		
 		// Set field to order by
-	//	$order_by = ($options->order_by=="distance") ? "location_distance" : "created";
+		//$order_by = ($options->order_by=="distance") ? "location_distance" : "created";
 		
 		// Build combined SQL Query
 		
@@ -371,7 +376,6 @@ class Good_search extends Search
 		$options_array['good_id'] = $good_ids;
 		$options_array['keyword'] = '';
 		$options_array['id_search'] = FALSE;
-		
 		
 		$results = $this->find($options_array);
 		
@@ -487,7 +491,8 @@ class Good_search extends Search
 			L.latitude AS location_latitude,
 			L.longitude AS location_longitude,
 			L.postal_code AS location_postal_code,
-			L.country AS location_country
+			L.country AS location_country,
+			L.street_address AS location_street_address
 			")
 			->join("locations AS L ","G.location_id = L.id",$type);
 	}
@@ -539,37 +544,7 @@ class Good_search extends Search
 		$this->CI->db->select("G.id")
 			->from("goods AS G ");
 	}
+
+
 	
-	/**
-	*	Adds clauses to query which limit search to a geographic area
-	*	The $location object is just the $options object from the find() method,
-	*	however since the schema of its location-related data is the same 
-	*	as the standard location object, we call it that here for simplicity.
-	*
-	*	@param object $location		Standard location object w/ radius property
-	*/
-	protected function _geosearch_clauses($location)
-	{
-		$this->CI->load->library('geo');
-		
-		// Process Location object (geocodes if needed, generates bounds)
-		if(!isset($location->bounds) || empty($location->bounds))
-		{
-			$location = $this->CI->geo->process($location);
-		}
-		
-		// Assemble SQL Clauses
-		
-		// Add latitude WHERE BETWEEN clause
-		$this->CI->db->where("L.latitude BETWEEN ".$location->bounds['latitude']['min']." AND ".$location->bounds['latitude']['max']);
-		
-		// Add longitude WHERE BETWEEN clause
-		$this->CI->db->where("L.longitude BETWEEN ".$location->bounds['longitude']['min']." AND ".$location->bounds['longitude']['max']);
-		
-		// Add default_location_id WHERE clause
-		// $this->CI->db->where("U.default_location_id IS NOT NULL");
-		
-		// Add location_distance SELECT clause
-		$this->CI->db->select("( 3959 * acos( cos( radians( ".$location->latitude." ) ) * cos( radians( L.latitude ) ) * cos( radians( L.longitude ) - radians(".$location->longitude.") ) + sin( radians(".$location->latitude.") ) * sin( radians( L.latitude ) ) ) ) AS location_distance");
-	}
 }

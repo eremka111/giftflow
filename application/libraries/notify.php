@@ -14,6 +14,8 @@
  *
  *	@author Brandon Jackson
  * 	@package Libraries
+ *
+ *	@param data is always an object
  */
 
 class Notify
@@ -52,11 +54,11 @@ class Notify
 	*	@param array $params
 	*	@param array $data
 	*/
-	function alert_user_registration_manual( $params, $data )
+	function alert_user_registration_manual($data)
 	{
 		$A = new Alert();
 		
-      	// Map hook data onto email template parseables array
+		// Map hook data onto email template parseables array
 		$A->parseables = array(
 			'user_email' => $data->U->email, 
 			'activation_link' => site_url('member/activate/'.$data->U->activation_code),
@@ -68,24 +70,26 @@ class Notify
 		
 		// Set recipient
 		$A->to = $data->U->email;
-      
-      	// send email
+
+		// send email
 		$A->send();
 	}
 	
 	/**
 	 * Sends message to user if a new posting matches one of their watches
 	 * 
-	 * @param type $watch
-	 * @param type $good 
+	 * @param object $watch
+	 * @param oobjectt $good 
 	 */
 	function alert_user_watch_match($watch, $good) {
 		
+		log_message('debug', "Sending watch notification email to user " . $watch->screen_name . " for item " . $good->title);
+		
 		$A = new Alert();
 		
-      	// Map hook data onto email template parseables array
+		// Map hook data onto email template parseables array
 		$A->parseables = array(
-			'subject' => "An item you may be interested was posted",
+			'subject' => "Someone posted a new gift that might interest you",
 			'link' => site_url('gifts/'.$good->id),
 			'title' => $good->title,
 			'recipient_name' => $watch->screen_name
@@ -97,7 +101,7 @@ class Notify
 		// Set recipient
 		$A->to = $watch->email;
       
-      	// send email
+		// send email
 		$A->send();
 	}
 	
@@ -112,10 +116,9 @@ class Notify
 	*	$data->Transaction: Transaction object representing the request itself
 	*	$data->Good: Good object of the gift requested
 	*
-	*	@param array $params
 	*	@param array $data		$this passed from the controller
 	*/
-	function alert_transaction_new( $params, $data )
+	function alert_transaction_new($data)
 	{		
 		$A = new Alert();
 
@@ -125,7 +128,8 @@ class Notify
 			'decider_email' => $data->transaction->decider->email,
 			'summary' => strip_tags($data->transaction->language->decider_summary),
 			'subject' => strip_tags($data->transaction->language->decider_summary),
-			'note' => $data->note
+			'note' => $data->note,
+			'return_url' => $data->return_url
 		);
 	
 		
@@ -134,65 +138,97 @@ class Notify
 		
 		// Set recipient
 		$A->to = $data->transaction->decider->email;
-       
-      	// send email
+
+		// send email
 		$A->send();
 	}
 	
-	function alert_transaction_activated( $params, $data )
+
+	/**
+	 * Called when user Accepts a transaction
+	 * param object $data
+	 */
+	function alert_transaction_completed($data)
 	{
 		$A = new Alert();
+
+		$other_user = ($data->transaction->demander->id == $this->CI->session->userdata['user_id'])? $data->transaction->decider : $data->transaction->demander;
+
+		$summary = ($data->transaction->demander->id == $this->CI->session->userdata['user_id'])? $data->transaction->language->decider_summary: $data->transaction->language->demander_summary;
 		
 		$A->parseables = array(
-			"message" => $data->message,
-			"demander_name" => $data->transaction->demander->screen_name,
-			"decider_name" => $data->transaction->decider->screen_name,
-			"demander_summary" => strip_tags($data->transaction->language->demander_summary),
-			"subject" => $data->transaction->decider->screen_name." has accepted your request!"
+			"completer_name" => $this->CI->session->userdata['screen_name'],
+			"receiver_name" => $other_user->screen_name,
+			"summary" => strip_tags($summary),
+			"subject" => $data->transaction->decider->screen_name." has marked your gift as complete",
+			'return_url' => $data->return_url
 			);
 			
 		// Set template name
-		$A->template_name = 'transaction_activated';
+		$A->template_name = 'transaction_completed';
 			
 		//Set recipient	
-		$A->to = $data->transaction->demander->email;
+		$A->to = $other_user->email;
 	
 		//Send
 		$A->send();
 	
 	}
+
+	/**
+	 * param object $data
+	 */
 	
-	function alert_transaction_message( $params, $data )
+	function alert_transaction_message($data)
 	{
 		$A = new Alert();
 		
 		// Get the latest message
-		$M = $data->conversation->get_latest_message();
 
 		$A->parseables = array(
-			"message" => $M->body,
+			"message" => $data->message,
 			"user_screen_name" => $this->CI->session->userdata('screen_name'),
+			"recipient_name" => $data->recipient,
 			"subject" => $this->CI->session->userdata('screen_name')." sent you a message",
-			"good_title" => $data->transaction->demands[0]->good->title
+			"good_title" => $data->transaction->demands[0]->good->title,
+			"return_url" => $data->return_url
 		);
 		
 		// Set template name
 		$A->template_name = 'transaction_message';
 		
-		// Set recipient
-		foreach($data->conversation->users as $user)
-		{
-			if($user->id != $this->CI->session->userdata('user_id'))
-			{
-				$A->to = $user->email;
-				$A->parseables['recipient_name'] = $user->screen_name;
-			}
-		}
+		$A->to = $data->recipient_email;
 
 		$A->send();
 	}
+
+	/**
+	 * param object $data
+	 */
+
+	function alert_user_message($data)
+	{
+		$A = new Alert();
+
+		$A->parseables = array(
+			'message' => $data->message,
+			'user_screen_name' =>$this->CI->session->userdata('screen_name'),
+			'subject' => $data->subject,
+			'recipient_name' => $data->recipient,
+			'return_url' => $data->return_url
+		);
+
+		$A->template_name = 'user_message';
+		$A->to = $data->recipient_email;
+
+		$A->send();
+	}
+
+	/**
+	 * param object $data
+	 */
 	
-	function review_new($params, $data)
+	function review_new($data)
 	{
 
 		$A = new Alert();
@@ -201,7 +237,8 @@ class Notify
 			"reviewed_screen_name" => $data->reviewed->screen_name,
 			"reviewer_screen_name" => $data->reviewer->screen_name,
 			"good_title" => $data->transaction->demands[0]->good->title,
-			"subject" => $data->reviewer->screen_name." has written you a review."
+			"subject" => $data->reviewer->screen_name." has written you a review.",
+			"return_url" => $data->return_url
 		);
 		
 		$A->template_name = "review_new";
@@ -210,34 +247,22 @@ class Notify
 		
 		$A->send();
 	}
-	
-	/**
-	*	Mark notifications as read
-	*	Note: handwritten SQL query used because the active record library
-	*	appears not to support the usage of JOIN clauses in UPDATE queries
-	*
-	*	$data object contains two properties: user_id and transaction_id.
-	*/
-	function transaction_viewed($params, $data)
-	{
-		Console::logSpeed("Notify::transaction_viewed()");
-		$this->CI->db->query("UPDATE `notifications` AS N JOIN events AS E ON N.event_id=E.id SET `N`.`enabled` = 0 WHERE `E`.`transaction_id` = ? AND `N`.`user_id` = ?", array($data->transaction_id, $data->user_id));		
-	}
-	
+
 	/** 
 	*	Email forgotten password code to user
+	*	param object $data
 	*
 	*/
-	function reset_password($params, $data)
+	function reset_password($data)
 	{
 		$A = new Alert();
 		
 		$A->parseables = array(
-			'password_reset_link' => site_url('member/reset_password/'.$data['forgotten_password_code']),
+			'password_reset_link' => site_url('member/reset_password/?code='.$data->forgotten_password_code),
 			'subject' => 'Reset your password',
-			'screen_name' => $data['screen_name'],
+			'screen_name' => $data->screen_name,
 			);
-		$A->to = $data['email'];
+		$A->to = $data->email;
 		
 		$A->template_name = "reset_password";
 		
@@ -245,46 +270,131 @@ class Notify
 	
 	}
 	
-	/**
-	* For admin purposes ONLY - sends email to admin with information about a given error
-	* DOES NOT WORK 
-	*/
-	function report_error($params, $data)
-	{
-		$A = new Alert();
-		$A->parseables = array (
-			"subject" => $data['heading'],
-			"message" => $data['message'],
-			"page"=> $data['page']
-		);
-		
-		$A->template_name = "report_error";
-		
-		$A->to = "admin@giftflow.org";
-		
-		$A->send();
-	}
-	
-	/**
+	/*
 	*	For admin purposes ONLY - sends email from about/contact form to admin@giftflow
+	*	param object $data
 	*
 	*/
-	function contact_giftflow($params, $data)
+	function contact_giftflow($data)
 	{
 		$A= new Alert();
 		
 		$A->parseables = array (
 			'subject' => 'Message from Outer Space',
-			'message' => $data['message'],
-			'email' => $data['email'],
-			'name' => $data['name']
+			'message' => $data->message,
+			'email' => $data->email,
+			'name' => $data->name
 			);
 			
 		$A->template_name = 'contact_giftflow';
 		
 		$A->to = 'hans@giftflow.org';
 		$A->send();
-	
 	}
-	
+
+	/**
+	 * When a user 'thanks' another, this function sends the recipient an email with
+	 * the text of the thank and 'approve/decline' buttons
+	 * The buttons then call the thank controller which validates/disables the thankyou
+	 * param object $data
+	 */
+	function thankyou($data)
+	{
+		$A = new Alert();
+
+		$A->parseables = array(
+			'subject' => $data->thanker_screen_name.' wants to thank you for '.$data->gift_title,
+			'body' => $data->body,
+			'gift_title' => $data->gift_title,
+			'recipient_screen_name' => $data->recipient_screen_name,
+			'thanker_screen_name' => $data->thanker_screen_name,
+			'return_url' => $data->return_url
+		);
+
+		$A->template_name = 'thankyou';
+		$A->to = $data->recipient_email;
+		$A->send();
+	}
+
+
+	/*
+	 * param object $data
+	 */
+
+	function thankyou_updated($data)
+	{
+		$A = new Alert();
+
+		$A->parseables = array(
+			'subject' => $data->recipient_screen_name.' has '.$data->decision.' your Thank.',
+			'body' => $data->body,
+			'gift_title' => $data->gift_title,
+			'screen_name' => $data->thanker_screen_name,
+			'recipient_screen_name' => $data->recipient_screen_name,
+			'return_url' => site_url('/you/view_thankyou/'.$data->id)
+		);
+		
+		$A->template_name = 'thankyou_updated';
+		$A->to = $data->recipient_email;
+		$A->send();
+	}
+
+
+	/*
+	 * param array $data
+	 */ 
+
+	function remind($data)
+	{
+		$A = new Alert();
+
+		$A->parseables = array(
+			'subject' => 'Your unfinished gifts',
+			'body' => $data['body'],
+			'screen_name' => $data['screen_name'],
+			'return_url' => site_url('login')
+		);
+		$A->message = $data['body'];
+		$A->template_name = 'transaction_reminder';
+		$A->to = $data['email'];
+		$A->send();
+	}
+
+
+	/*
+	 * param object $data
+	 */
+
+	function send_matches($data) 
+	{
+		$A = new Alert();
+
+		$A->parseables = array(
+			'subject' => 'Matches for your gifts and needs',
+			'screen_name' => $data->screen_name,
+			'return_url' => site_url('login')
+		);
+		$A->message = $data->body;
+		$A->template_name = 'goods_match';
+		$A->to = $data->email;
+		$A->send();
+
+	}	
+
+	/*
+	 * param array $data
+	 */
+
+	function thank_invite($data)
+	{
+		$A = new Alert();
+
+		$A->parseables = $data;
+
+		$A->template_name = 'thank_invite';
+		$A->to = $data['recipient_email'];
+			
+		$A->send();
+	}
+
 }

@@ -22,6 +22,7 @@ class User_search extends Search
 	{
 		parent::__construct();
 		$this->CI =& get_instance();
+		$this->CI->load->library('Factory/User_factory');
 	}
 	
 	/**
@@ -38,7 +39,7 @@ class User_search extends Search
 	*	@param int $options['facebook_id'] 		Filter by Facebook ID
 	*	@param boolean $options['exclude_logged_in_user'] 	Excludes logged in user
 	*	@param boolean $options['following_stats']	If true, populates am_following and is_follower fields
-	*	@param float $options['location']		Filter by location object
+	*	@param float $optiorar'location']		Filter by location object
 	*	@param string $options['order_by']		Field name to order by
 	*	@param string $options['sort']			Sort order
 	*	@param int $options['offset']			Offset
@@ -48,15 +49,7 @@ class User_search extends Search
 	function find($options = array())
 	{
 		Console::logSpeed("User_search::find()");
-		
-		// Build $options object using defaults
-		// $default_like_options = array(
-// 			"screen_name"=>"", 
-// 			"first_name"=>"", 
-// 			"last_name"=>"", 
-// 			"bio"=>"",
-// 			"occupation"=>""
-// 		);
+
 		$default_options = array(
 			"user_id"=>NULL,
 			"email"=>NULL,
@@ -64,18 +57,18 @@ class User_search extends Search
 			"exclude_logged_in_user"=>FALSE,
 			"following_stats"=>TRUE,
 			"location"=>NULL,
-			"transaction_id"=>NULL,
 			"order_by"=>"U.created",
 			"sort"=>"ASC",
 			"offset"=>0,
 			"limit"=>20,
 			"forgotten_password_code"=>NULL,
 			"include_forgotten_password_code" => FALSE,
+			'include_photos' => FALSE,
 			"keyword" => '',
-      "type" => ''
+			"type" => '',
+			'radius' => 100
 		);
 		$options = (object) array_merge(
-			//$default_like_options, 
 			$default_options, 
 			$options
 		);	
@@ -115,28 +108,19 @@ class User_search extends Search
 		// Filter text fields by WHERE LIKE
 		if(!empty($options->keyword))
 		{
-			$where_clause = sprintf("(	U.first_name LIKE '%s' OR 
-										U.last_name LIKE '%s' OR
-										U.screen_name LIKE '%s' OR
-										U.bio LIKE '%s' OR
-										U.email LIKE '%s' OR
-										U.occupation LIKE '%s')",
-										$options->keyword, $options->keyword,
-										$options->keyword, $options->keyword,
-										$options->keyword, $options->keyword);
-			$this->CI->db->where($where_clause);
+			return $this->find_by_keyword($options);
 		}	
-    if(!empty($options->type))
-    {
-      $this->CI->db->where('U.type',$options->type);
-    }
+		if(!empty($options->type))
+		{
+		  $this->CI->db->where('U.type',$options->type);
+		}
 		
 		// Filter by location if lat/lng or un-geocoded address,
 		// only returning users who have a location
 		if(!empty($options->location))
 		{
 			$this->_join_locations("inner");
-			$this->_geosearch_clauses($options->location);
+			$this->geosearch_query($options);
 		}
 		
 		// Else simply include location for those who have it
@@ -176,10 +160,11 @@ class User_search extends Search
 		
 		// Return result
 		$result = $this->CI->db->get()->result();
-		
+
 		// Hydrate & return results
 		Console::logSpeed("User_search::find(): done.");
-		return Factory::user($result);
+		$UF = new User_factory();
+		return $UF->build_users($options,$result);
 	}
 	
 	/**
@@ -198,6 +183,8 @@ class User_search extends Search
 		{
 			return $result[0];
 		}
+		
+		return new stdClass();
 	}
 		
 	/**
@@ -209,16 +196,19 @@ class User_search extends Search
 	{
 		Console::logSpeed("User_search::following()");
 		$this->_basic_query();
+		$this->_join_locations('left');
 		$result = $this->CI->db->select("FU.id IS NOT NULL AS user_am_following")
 			->join('followings_users AS FU ','U.id=FU.following_id')
 			->where('FU.user_id',$options['user_id'])
+			->limit(10)
 			->get()
 			->result();
 
-		$object = Factory::user($result);
 		
 		Console::logSpeed("User_search::following(): done.");
-		return $object;
+		$F = new User_factory();
+		return $F->build_users($options, $result);
+
 	}
 	
 	/**
@@ -235,11 +225,10 @@ class User_search extends Search
 			->where('FU.following_id',$options['user_id'])
 			->get()
 			->result();
-
-		$object = Factory::user($result);
 		
 		Console::logSpeed("User_search::followers(): done.");
-		return $object;
+		$F = new User_factory();
+		return $F->build_users($options, $result);
 	}
 	
 	/**
@@ -274,7 +263,8 @@ class User_search extends Search
 		else
 		{
 			return $this->find(array(
-				"user_id"=>$user_ids
+				"user_id"=>$user_ids,
+				'include_location' => TRUE
 			));
 		}
 	}
@@ -303,7 +293,55 @@ class User_search extends Search
 		return $overlap_users;
 		
 	}
+
+	/**
+	 * Seperate keyword search into seperate function to simplify filtering
+	 */
+
+	function find_by_keyword($options) 
+	{
+			
+		// Filter text fields by WHERE LIKE
+		$keywords = explode(' ',$options->keyword);
+		$likewhere = '(';
+		
+		$i = 0;
+		$len = count($keywords);
+		foreach($keywords as $word) {
+			$i++;
+			$word = $this->CI->db->escape_like_str($word);
+			$word = "'%".$word."%'";
+
+			$likewhere .= "K.screen_name LIKE ".$word.
+							" OR K.bio LIKE ".$word.
+							" OR K.email LIKE ".$word.
+							" OR K.occupation LIKE ".$word." ";
+			if($i != $len){
+				$likewhere.= ' OR ';
+			}
+		}
+		$likewhere .= ")";
+		
+		$this->CI->db->select('K.id')
+			->from('users AS K')
+			->where($likewhere)
+			->limit(100);
 	
+		
+		$results = $this->CI->db->get()->result_array();
+		$next_options = array(
+			'user_id' => array_map(function($user) { return $user['id']; }, $results),
+		);
+
+		//just return empty array if no user_ids were found
+		if(count($next_options['user_id']) > 0) {	
+			return $this->find($next_options);
+		} else {
+			return $next_options['user_id'];
+		}
+
+	}
+
 	/**
 	*	Assembles basic SELECT query. The resulting SQL provides
 	*	a foundation for more complex queries. Conceptually it's similar
@@ -321,6 +359,8 @@ class User_search extends Search
 			U.facebook_id AS user_facebook_id,
 			U.status AS user_status,
 			U.created AS user_created,
+			U.bio As user_bio,
+			U.url AS user_url,
 			P.id AS photo_id,
 			P.url AS photo_url,
 			P.thumb_url AS photo_thumb_url")
@@ -341,60 +381,6 @@ class User_search extends Search
 			L.latitude AS location_latitude,
 			L.longitude AS location_longitude")
 			->join("locations AS L ","U.default_location_id = L.id",$type);
-	}
-
-	/**
-	*	Adds where clauses that limit results to a specific geographic area
-	*
-	*	Calculates bounds by determining how many degrees of latitude and 
-	*	longitude the search radius encompasses. This is not a complete 
-	*	solution, however, since the shape of the bounds is a square, not a 
-	*	circle. Thus to be truly accurate another where clause limiting results 
-	*	by the calculated distance field should be used.
-	*
-	*	@param object $options				Location object
-	*	@param float $options->latitude		Latitude
-	*	@param float $options->longitude	Longitude
-	*	@param float $options->address		Formatted address
-	*	@return boolean
-	*/
-	protected function _geosearch_clauses($options)
-	{
-		$this->CI->load->library('geo');
-		
-		// Geocode if needed
-		if( !empty($options->address) && (empty($options->latitude) || empty($options->longitude)))
-		{
-			$options = $this->CI->geo->geocode($options->address,$options);
-		}
-		
-		// Make sure latitude and longitude are present
-		if( empty($options->latitude) || empty($options->longitude) )
-		{
-			return FALSE;
-		}
-		
-		if(empty($options->radius))
-		{
-			$options->radius = 100;
-		}
-		
-		// Get lat/lng bounds
-		$bounds = $this->CI->geo->get_bounds($options->latitude, $options->longitude, $options->radius);
-		
-		// Assemble SQL Clauses
-		
-		// Add latitude WHERE BETWEEN clause
-		$this->CI->db->where("L.latitude BETWEEN ".$bounds['latitude']['min']." AND ".$bounds['latitude']['max']);
-		
-		// Add longitude WHERE BETWEEN clause
-		$this->CI->db->where("L.longitude BETWEEN ".$bounds['longitude']['min']." AND ".$bounds['longitude']['max']);
-		
-		// Add default_location_id WHERE clause
-		$this->CI->db->where("U.default_location_id IS NOT NULL");
-		
-		// Add location_distance SELECT clause
-		$this->CI->db->select("( 3959 * acos( cos( radians( ".$options->latitude." ) ) * cos( radians( L.latitude ) ) * cos( radians( L.longitude ) - radians(".$options->longitude.") ) + sin( radians(".$options->latitude.") ) * sin( radians( L.latitude ) ) ) ) AS location_distance");
 	}
 }
 /*
